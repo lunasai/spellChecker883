@@ -16,6 +16,7 @@ import { SemanticTokenBadge } from "@/components/ui-helpers"
 import { extractThemes } from "@/lib/token-utils"
 import { ERROR_MESSAGES, APP_CONFIG } from "@/lib/constants"
 import type { AnalysisResult, Theme } from "@/lib/types"
+import { analyzeClientSide } from "@/lib/client-analyzer"
 
 export default function DesignTokenAuditTool() {
   const [tokensFile, setTokensFile] = useState<File | null>(null)
@@ -81,29 +82,20 @@ export default function DesignTokenAuditTool() {
 
     try {
       setProgress(20)
-      const formData = new FormData()
-      formData.append("tokensFile", tokensFile)
-      formData.append("figmaUrl", figmaUrl)
-      formData.append("figmaToken", figmaToken)
-      if (useTheme && selectedTheme) {
-        formData.append("selectedTheme", JSON.stringify(selectedTheme))
-      }
-
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        body: formData,
-      })
-
-      if (!response.ok) {
-        throw new Error(ERROR_MESSAGES.ANALYSIS_FAILED)
-      }
+      
+      // Use client-side analysis instead of API call
+      const analysisResults = await analyzeClientSide(
+        tokensFile,
+        figmaUrl,
+        figmaToken,
+        useTheme && selectedTheme ? selectedTheme : null
+      )
 
       setProgress(100)
-      const analysisResults = await response.json()
       setResults(analysisResults)
     } catch (err) {
       console.error("Analysis error:", err)
-      setError(ERROR_MESSAGES.ANALYSIS_FAILED)
+      setError(err instanceof Error ? err.message : ERROR_MESSAGES.ANALYSIS_FAILED)
     } finally {
       setIsAnalyzing(false)
       setProgress(0)
