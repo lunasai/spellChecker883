@@ -1,5 +1,6 @@
 import { ERROR_MESSAGES } from "./constants"
 import type { DesignToken, TokenValue, ResolvedToken, Theme } from "./types"
+import { calculateMatchConfidence } from "./confidence-calculator"
 
 interface TokenSetInfo {
   name: string
@@ -355,4 +356,157 @@ export function extractCleanTokenName(tokenPath: string): string {
     }
   }
   return tokenPath
+}
+
+// Enhanced token recommendation utilities
+export function getTokenRecommendations(
+  value: string,
+  type: string,
+  tokens: Record<string, ResolvedToken>,
+  maxRecommendations: number = 5
+): Array<{
+  tokenName: string
+  tokenValue: string
+  confidence: number
+  isSemanticToken: boolean
+  recommendationReason: string
+}> {
+  const recommendations: Array<{
+    tokenName: string
+    tokenValue: string
+    confidence: number
+    isSemanticToken: boolean
+    recommendationReason: string
+  }> = []
+
+  for (const [tokenName, tokenData] of Object.entries(tokens)) {
+    if (!tokenData.value) continue
+
+    const confidence = calculateMatchConfidence(
+      value,
+      tokenData.value,
+      type,
+      tokenData.isReference,
+      tokenName
+    )
+
+    if (confidence > 0) {
+      const reason = getRecommendationReason(value, tokenData, tokenName, type)
+      recommendations.push({
+        tokenName,
+        tokenValue: tokenData.value,
+        confidence,
+        isSemanticToken: tokenData.isReference,
+        recommendationReason: reason
+      })
+    }
+  }
+
+  // Sort by confidence and semantic priority
+  recommendations.sort((a, b) => {
+    if (Math.abs(a.confidence - b.confidence) > 0.01) {
+      return b.confidence - a.confidence
+    }
+    // Prefer semantic tokens
+    if (a.isSemanticToken && !b.isSemanticToken) return -1
+    if (!a.isSemanticToken && b.isSemanticToken) return 1
+    return a.tokenName.localeCompare(b.tokenName)
+  })
+
+  return recommendations.slice(0, maxRecommendations)
+}
+
+function getRecommendationReason(
+  value: string,
+  tokenData: ResolvedToken,
+  tokenName: string,
+  type: string
+): string {
+  const reasons: string[] = []
+
+  if (tokenData.isReference) {
+    reasons.push("Semantic token")
+  }
+
+  if (value === tokenData.value) {
+    reasons.push("Exact value match")
+  } else {
+    const valueNum = parseFloat(value.replace(/px|rem|em/, ""))
+    const tokenNum = parseFloat(tokenData.value.replace(/px|rem|em/, ""))
+    
+    if (!isNaN(valueNum) && !isNaN(tokenNum)) {
+      const difference = Math.abs(valueNum - tokenNum)
+      if (difference <= 1) {
+        reasons.push("Very close value match")
+      } else if (difference <= 2) {
+        reasons.push("Close value match")
+      }
+    }
+  }
+
+  // Add semantic naming reason
+  if (type === "spacing" && tokenName.includes("space.")) {
+    reasons.push("Semantic spacing token")
+  } else if (type === "spacing" && tokenName.includes("spacing.")) {
+    reasons.push("Base spacing token")
+  }
+
+  return reasons.join(", ") || "Similar token"
+}
+
+// Utility to suggest semantic token creation
+export function suggestSemanticTokenCreation(
+  value: string,
+  type: string,
+  existingTokens: Record<string, ResolvedToken>
+): Array<{
+  suggestedName: string
+  suggestedValue: string
+  reason: string
+}> {
+  const suggestions: Array<{
+    suggestedName: string
+    suggestedValue: string
+    reason: string
+  }> = []
+
+  if (type === "spacing") {
+    const valueNum = parseFloat(value.replace(/px|rem|em/, ""))
+    if (!isNaN(valueNum)) {
+      // Suggest semantic spacing tokens based on common patterns
+      if (valueNum <= 4) {
+        suggestions.push({
+          suggestedName: "space.xs",
+          suggestedValue: value,
+          reason: "Extra small spacing for tight layouts"
+        })
+      } else if (valueNum <= 8) {
+        suggestions.push({
+          suggestedName: "space.sm",
+          suggestedValue: value,
+          reason: "Small spacing for compact elements"
+        })
+      } else if (valueNum <= 16) {
+        suggestions.push({
+          suggestedName: "space.md",
+          suggestedValue: value,
+          reason: "Medium spacing for standard layouts"
+        })
+      } else if (valueNum <= 24) {
+        suggestions.push({
+          suggestedName: "space.lg",
+          suggestedValue: value,
+          reason: "Large spacing for spacious layouts"
+        })
+      } else {
+        suggestions.push({
+          suggestedName: "space.xl",
+          suggestedValue: value,
+          reason: "Extra large spacing for prominent elements"
+        })
+      }
+    }
+  }
+
+  return suggestions
 }

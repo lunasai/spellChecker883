@@ -68,6 +68,11 @@ export interface FigmaNode {
     stroke?: string
     [key: string]: string | undefined
   }
+  // Component-related properties
+  componentId?: string // ID of the component this instance is based on
+  componentName?: string // Name of the component this instance is based on
+  componentProperties?: Record<string, any> // Component instance properties
+  isComponentInstance?: boolean // Flag to identify component instances
 }
 
 export interface ValueLocation {
@@ -76,6 +81,10 @@ export interface ValueLocation {
   frameId?: string
   frameName?: string
   framePath?: string
+  // Component-related information
+  isComponentInstance?: boolean
+  componentId?: string
+  componentName?: string
 }
 
 export interface ValueOccurrence {
@@ -146,6 +155,10 @@ export interface FrameAnalysis {
     locations: string[]
     nodeIds?: string[]
     layerNames?: string[]
+    // Component information
+    isComponentInstances?: boolean[]
+    componentIds?: (string | undefined)[]
+    componentNames?: (string | undefined)[]
     recommendations: Array<{
       tokenName: string
       tokenValue: string

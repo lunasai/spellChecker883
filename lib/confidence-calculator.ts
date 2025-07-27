@@ -103,10 +103,10 @@ function calculateNumericConfidence(
 function calculateSemanticNameBoost(tokenName: string, propertyType: string): number {
   const normalizedTokenName = tokenName.toLowerCase()
   
-  // Define semantic keywords for each property type
+  // Define semantic keywords for each property type with enhanced matching
   const semanticKeywords: Record<string, string[]> = {
     [APP_CONFIG.TOKEN_TYPES.BORDER_RADIUS]: ['radius', 'radii', 'border-radius', 'corner', 'rounded'],
-    [APP_CONFIG.TOKEN_TYPES.SPACING]: ['spacing', 'space', 'gap', 'margin', 'inset', 'outset'],
+    [APP_CONFIG.TOKEN_TYPES.SPACING]: ['spacing', 'space', 'gap', 'margin', 'inset', 'outset', 'padding'],
     [APP_CONFIG.TOKEN_TYPES.PADDING]: ['padding', 'pad', 'inset'],
     [APP_CONFIG.TOKEN_TYPES.FILL]: ['fill', 'background', 'bg', 'color', 'colour'],
     [APP_CONFIG.TOKEN_TYPES.STROKE]: ['stroke', 'border', 'outline'],
@@ -118,22 +118,50 @@ function calculateSemanticNameBoost(tokenName: string, propertyType: string): nu
 
   const keywords = semanticKeywords[propertyType] || []
   
-  // Check if any keyword is present in the token name
+  // Enhanced semantic matching logic
+  let maxBoost = 0
+  
+  // Check for exact semantic token patterns
   for (const keyword of keywords) {
     if (normalizedTokenName.includes(keyword)) {
-      // Return a boost based on how well the name matches
-      // Exact keyword match gets higher boost than partial match
+      let boost = 0
+      
+      // Exact keyword match gets highest boost
       if (normalizedTokenName === keyword) {
-        return 0.1 // Maximum boost for exact keyword match
-      } else if (normalizedTokenName.includes(`.${keyword}`) || normalizedTokenName.includes(`${keyword}.`)) {
-        return 0.08 // High boost for keyword as part of path
-      } else {
-        return 0.05 // Moderate boost for keyword presence
+        boost = 0.15 // Increased from 0.1
+      } 
+      // Semantic token patterns (e.g., space.sm, spacing.small)
+      else if (normalizedTokenName.includes(`.${keyword}`) || normalizedTokenName.includes(`${keyword}.`)) {
+        boost = 0.12 // Increased from 0.08
+        
+        // Additional boost for common semantic size patterns
+        if (normalizedTokenName.match(/\.(xs|sm|md|lg|xl|xxs|xxl)$/)) {
+          boost += 0.03 // Extra boost for size qualifiers
+        }
+      } 
+      // Keyword presence in path
+      else {
+        boost = 0.08 // Increased from 0.05
       }
+      
+      maxBoost = Math.max(maxBoost, boost)
     }
   }
 
-  return 0 // No semantic match
+  // Special handling for spacing tokens to prefer semantic over numeric
+  if (propertyType === APP_CONFIG.TOKEN_TYPES.SPACING) {
+    // Penalize purely numeric token names (e.g., "3", "4", "5")
+    if (normalizedTokenName.match(/^\d+$/) || normalizedTokenName.match(/\.\d+$/)) {
+      maxBoost -= 0.05 // Reduce confidence for numeric-only tokens
+    }
+    
+    // Boost for semantic spacing patterns
+    if (normalizedTokenName.includes('space.') || normalizedTokenName.includes('spacing.')) {
+      maxBoost += 0.02
+    }
+  }
+
+  return Math.max(0, maxBoost) // Ensure we don't return negative values
 }
 
 function calculateColorSimilarity(color1: string, color2: string): number {

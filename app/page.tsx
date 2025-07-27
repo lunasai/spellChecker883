@@ -195,16 +195,27 @@ function AppHeader() {
 }
 
 function OverviewCard({ results }: { results: AnalysisResult }) {
-  // Calculate the new metrics based on your requirements
+  // Calculate the correct metrics based on your requirements
   const tokenizedValues = results.figmaAnalysis.tokenizedElements || 0
-  const nonTokenizedValues = results.figmaAnalysis.totalElements - tokenizedValues
-  const matches = results.tokenMatches.length
-  const unmatches = results.unmatchedValues.length
   
-  const totalAnalyzed = tokenizedValues + matches + unmatches
+  // Calculate total instances that can be tokenized by looking at the original nonTokenizedValues
+  // and checking which ones have matches
+  const totalMatchedInstances = results.figmaAnalysis.nonTokenizedValues.reduce((sum, nonTokenizedValue) => {
+    // Check if this value has a match in tokenMatches
+    const hasMatch = results.tokenMatches.some(match => match.figmaValue === nonTokenizedValue.value)
+    return sum + (hasMatch ? nonTokenizedValue.count : 0)
+  }, 0)
+  
+  // Calculate total instances that need attention (unmatched with count)
+  const totalUnmatchedInstances = results.unmatchedValues.reduce((sum, unmatched) => sum + unmatched.count, 0)
+  
+  // Total instances analyzed
+  const totalAnalyzed = tokenizedValues + totalMatchedInstances + totalUnmatchedInstances
+  
+  // Calculate percentages
   const tokenizedPercentage = totalAnalyzed > 0 ? Math.round((tokenizedValues / totalAnalyzed) * 100) : 0
-  const matchesPercentage = totalAnalyzed > 0 ? Math.round((matches / totalAnalyzed) * 100) : 0
-  const unmatchesPercentage = totalAnalyzed > 0 ? Math.round((unmatches / totalAnalyzed) * 100) : 0
+  const matchesPercentage = totalAnalyzed > 0 ? Math.round((totalMatchedInstances / totalAnalyzed) * 100) : 0
+  const unmatchesPercentage = totalAnalyzed > 0 ? Math.round((totalUnmatchedInstances / totalAnalyzed) * 100) : 0
 
   // Calculate issue categories from all non-tokenized values
   const issueCategories = {
@@ -243,7 +254,7 @@ function OverviewCard({ results }: { results: AnalysisResult }) {
                 <div className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
                   {tokenizedPercentage}%
                 </div>
-                <div className="text-base text-gray-600">tokenized</div>
+                <div className="text-base text-gray-600">already tokenized</div>
               </div>
               
               {/* Percentage breakdown */}
@@ -262,9 +273,9 @@ function OverviewCard({ results }: { results: AnalysisResult }) {
               
               {/* Raw counts */}
               <div className="flex justify-center gap-3 text-xs text-gray-500 pt-1 border-t border-gray-100">
-                <span>{tokenizedValues} tokenized</span>
-                <span>{matches} matches</span>
-                <span>{unmatches} issues</span>
+                <span>{tokenizedValues} instances</span>
+                <span>{totalMatchedInstances} instances</span>
+                <span>{totalUnmatchedInstances} instances</span>
               </div>
             </div>
           </div>
@@ -660,20 +671,6 @@ function FigmaInputSection({
           onChange={(e) => onFigmaTokenChange(e.target.value)}
           className="mt-1 text-xs"
         />
-        <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-          <Info className="w-3 h-3 text-blue-600" />
-          <p className="text-xs text-blue-700">
-            Get your token from{" "}
-            <a
-              href="https://www.figma.com/developers/api#access-tokens"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium hover:underline"
-            >
-              Figma's developer settings
-            </a>
-          </p>
-        </div>
       </div>
     </div>
   )

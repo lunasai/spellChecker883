@@ -14,10 +14,50 @@ export function generateFigmaFrameUrl(baseUrl: string, frameId: string): string 
 export function generateFigmaNodeUrl(baseUrl: string, nodeId: string): string {
   try {
     const url = new URL(baseUrl)
+    
+    // Ensure we have a valid node ID
+    if (!nodeId || nodeId.trim() === '') {
+      return baseUrl
+    }
+    
+    // Encode the node ID properly for Figma URLs
+    // Figma uses %3A as the separator for node IDs in URLs
     const encodedNodeId = nodeId.replace(/-/g, APP_CONFIG.FIGMA_API.NODE_SEPARATOR)
+    
+    // Set the node-id parameter
     url.searchParams.set("node-id", encodedNodeId)
+    
+    // For component instances, we might also need to ensure we're targeting the right view
+    // Some component instances might need additional parameters, but the basic node-id should work
+    
     return url.toString()
-  } catch {
+  } catch (error) {
+    console.warn('Failed to generate Figma node URL:', error)
+    return baseUrl
+  }
+}
+
+// Enhanced function specifically for component instances
+export function generateFigmaComponentUrl(baseUrl: string, nodeId: string): string {
+  try {
+    const url = new URL(baseUrl)
+    
+    if (!nodeId || nodeId.trim() === '') {
+      return baseUrl
+    }
+    
+    // For component instances, we use the same encoding as regular nodes
+    const encodedNodeId = nodeId.replace(/-/g, APP_CONFIG.FIGMA_API.NODE_SEPARATOR)
+    
+    // Set the node-id parameter
+    url.searchParams.set("node-id", encodedNodeId)
+    
+    // Component instances should work with the same URL structure
+    // The key is ensuring the node-id is properly encoded
+    
+    return url.toString()
+  } catch (error) {
+    console.warn('Failed to generate Figma component URL:', error)
     return baseUrl
   }
 }

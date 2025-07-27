@@ -140,7 +140,7 @@ function findAllPotentialMatches(figmaValue: FigmaValue, tokens: Record<string, 
       matchType: determineMatchType(figmaValue.value, tokenData, confidence),
     }
 
-    // Categorize matches with proper prioritization for semantic tokens
+    // Enhanced categorization with better semantic token prioritization
     if (confidence >= 0.98) {
       // For exact matches, prioritize semantic tokens
       if (tokenData.isReference) {
@@ -157,15 +157,37 @@ function findAllPotentialMatches(figmaValue: FigmaValue, tokens: Record<string, 
     }
   }
 
-  // Define comparison function for sorting with semantic token priority
+  // Enhanced comparison function for sorting with better semantic token priority
   const compareMatches = (a: PotentialMatch, b: PotentialMatch) => {
     // First by confidence
     if (Math.abs(a.confidence - b.confidence) > 0.01) {
       return b.confidence - a.confidence
     }
-    // Then prefer semantic tokens
+    
+    // Then prefer semantic tokens with enhanced logic
     if (a.tokenData.isReference && !b.tokenData.isReference) return -1
     if (!a.tokenData.isReference && b.tokenData.isReference) return 1
+    
+    // If both are semantic or both are base, apply additional criteria
+    if (a.tokenData.isReference === b.tokenData.isReference) {
+      // For spacing tokens, prefer semantic naming patterns over numeric
+      if (a.tokenName.includes('spacing') || b.tokenName.includes('spacing')) {
+        const aIsNumeric = /^\d+$/.test(a.tokenName.split('.').pop() || '')
+        const bIsNumeric = /^\d+$/.test(b.tokenName.split('.').pop() || '')
+        
+        if (aIsNumeric && !bIsNumeric) return 1  // Prefer non-numeric
+        if (!aIsNumeric && bIsNumeric) return -1 // Prefer non-numeric
+      }
+      
+      // Prefer shorter, more semantic token names
+      const aSemanticScore = calculateSemanticNameScore(a.tokenName)
+      const bSemanticScore = calculateSemanticNameScore(b.tokenName)
+      
+      if (aSemanticScore !== bSemanticScore) {
+        return bSemanticScore - aSemanticScore
+      }
+    }
+    
     // Finally by name for consistency
     return a.tokenName.localeCompare(b.tokenName)
   }
@@ -281,4 +303,27 @@ export function getRecommendationsForValue(
     matchType: match.matchType,
     fullTokenPath: match.tokenName, // Keep full path for tooltip
   }))
+}
+
+// Helper function to calculate semantic name score
+function calculateSemanticNameScore(tokenName: string): number {
+  const normalizedName = tokenName.toLowerCase()
+  let score = 0
+  
+  // Boost for semantic patterns
+  if (normalizedName.includes('space.')) score += 3
+  if (normalizedName.includes('spacing.')) score += 2
+  if (normalizedName.includes('margin.')) score += 2
+  if (normalizedName.includes('padding.')) score += 2
+  
+  // Boost for size qualifiers
+  if (normalizedName.match(/\.(xs|sm|md|lg|xl|xxs|xxl)$/)) score += 2
+  
+  // Penalize numeric-only tokens
+  if (normalizedName.match(/^\d+$/) || normalizedName.match(/\.\d+$/)) score -= 1
+  
+  // Prefer shorter, more readable names
+  score += Math.max(0, 10 - tokenName.length) * 0.1
+  
+  return score
 }

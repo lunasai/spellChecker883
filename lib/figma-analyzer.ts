@@ -43,7 +43,8 @@ function extractTypographyFromNode(
   currentPath: string,
   currentFrame: FrameInfo | undefined,
   valueOccurrences: ValueOccurrence[],
-  styleIdToStyle?: Record<string, any>
+  styleIdToStyle?: Record<string, any>,
+  context?: TraversalContext, // Add context parameter
 ): TypographyTokenizationInfo {
   let hasTokenizedProperties = false
 
@@ -116,7 +117,7 @@ function extractTypographyFromNode(
   typographyProperties.forEach(({ value, suffix }) => {
     if (value !== undefined) {
       const formattedValue = suffix ? `${value}${suffix}` : String(value)
-              addValueOccurrence(formattedValue, "typography", currentPath, currentFrame, valueOccurrences, node.id)
+      addValueOccurrence(formattedValue, "typography", currentPath, currentFrame, valueOccurrences, node.id, node, context)
     }
   })
 
@@ -161,6 +162,7 @@ export function analyzeFigmaFileByFrames(
     resolvedTokens,
     stats,
     styleIdToStyle,
+    isInsideComponent: false, // Start outside any component
   })
 
   const nonTokenizedValues = convertToNonTokenizedFormat(valueOccurrences)
@@ -204,6 +206,9 @@ interface TraversalContext {
   figmaUrl: string
   resolvedTokens?: Record<string, ResolvedToken>
   stats: NodeAnalysisStats
+  // Component tracking
+  currentComponentId?: string
+  isInsideComponent: boolean
 }
 
 function traverseDocumentNodes(node: FigmaNode, context: TraversalContext & { styleIdToStyle?: Record<string, any> }, path = "", currentFrame?: FrameInfo): void {
@@ -213,6 +218,35 @@ function traverseDocumentNodes(node: FigmaNode, context: TraversalContext & { st
   }
   context.stats.totalElements++
   const currentPath = path ? `${path} > ${node.name}` : node.name
+
+  // Check if this node is a component instance
+  // In Figma API, component instances have type 'INSTANCE' and may have componentId
+  const isComponentInstance = node.type === 'INSTANCE' || node.componentId !== undefined
+  const newIsInsideComponent = context.isInsideComponent || isComponentInstance
+  const newCurrentComponentId = isComponentInstance ? node.id : context.currentComponentId
+
+  // Try to extract component name from the node path
+  let componentName = node.componentName
+  if (isComponentInstance && !componentName && currentPath.includes(' > ')) {
+    const pathParts = currentPath.split(' > ')
+    // Look for the component name in the path (usually the component instance name)
+    // Skip generic layer names
+    const genericLayerNames = /^(Layer|Frame|Group|Rectangle|Text|Button|Input|Card|Modal|Dialog|Header|Footer|Sidebar|Nav|Menu|List|Grid|Container|Wrapper|Box|Div|Span|P|H[1-6]|A|Img|Icon|Logo|Avatar|Badge|Tag|Label|Field|Form|Section|Article|Aside|Main|Outlet|Media area|Instance)$/i
+    
+    // The component name is usually the name of the component instance itself
+    if (!genericLayerNames.test(node.name)) {
+      componentName = node.name
+    } else {
+      // Look in the path for a meaningful component name
+      for (let i = pathParts.length - 1; i >= 0; i--) {
+        const part = pathParts[i]
+        if (!genericLayerNames.test(part) && !part.match(/^Component \d+:\d+$/) && !part.match(/^\d+:\d+$/)) {
+          componentName = part
+          break
+        }
+      }
+    }
+  }
 
   const isParentFrame = context.parentFrames.some((frame) => frame.id === node.id)
   if (isParentFrame) {
@@ -225,7 +259,20 @@ function traverseDocumentNodes(node: FigmaNode, context: TraversalContext & { st
     initializeFrameAnalysis(node.id, node.name, currentPath, context.figmaUrl, context.frameAnalyses)
   }
 
-  const nodeTokenizationInfo = extractNodeValues(node, currentPath, currentFrame, context.valueOccurrences, context.styleIdToStyle)
+  // Create a new context for child nodes with updated component tracking
+  const childContext = {
+    ...context,
+    isInsideComponent: newIsInsideComponent,
+    currentComponentId: newCurrentComponentId,
+  }
+
+  // Update the node with component name if we found one
+  const nodeWithComponentName = {
+    ...node,
+    componentName: componentName || node.componentName,
+  }
+
+  const nodeTokenizationInfo = extractNodeValues(nodeWithComponentName, currentPath, currentFrame, childContext.valueOccurrences, childContext.styleIdToStyle, childContext)
 
   // Update tokenization stats
   if (nodeTokenizationInfo.hasTokenizedProperties) {
@@ -244,7 +291,14 @@ function traverseDocumentNodes(node: FigmaNode, context: TraversalContext & { st
   }
 
   if (node.children) {
-    node.children.forEach((child) => traverseDocumentNodes(child, context, currentPath, currentFrame))
+    node.children.forEach((child) => {
+      // Pass the component name context to child nodes
+      const childWithComponentContext = {
+        ...child,
+        componentName: componentName || child.componentName,
+      }
+      traverseDocumentNodes(childWithComponentContext, childContext, currentPath, currentFrame)
+    })
   }
 }
 
@@ -279,11 +333,12 @@ function extractNodeValues(
   currentFrame: FrameInfo | undefined,
   valueOccurrences: ValueOccurrence[],
   styleIdToStyle?: Record<string, any>,
+  context?: TraversalContext, // Add context parameter
 ): NodeTokenizationInfo {
   let hasTokenizedProperties = false
 
   // Extract colors from fills and strokes
-  const colorTokenizationInfo = extractColorsFromNode(node, currentPath, currentFrame, valueOccurrences)
+  const colorTokenizationInfo = extractColorsFromNode(node, currentPath, currentFrame, valueOccurrences, context)
   hasTokenizedProperties = hasTokenizedProperties || colorTokenizationInfo.hasTokenizedProperties
 
   // Extract spacing values (these typically don't have bound variables in current Figma API)
@@ -292,7 +347,7 @@ function extractNodeValues(
   ]
   spacingProperties.forEach(({ value, boundVariable, name }) => {
     if (value !== undefined && boundVariable === undefined && node.boundVariables?.[name] === undefined) {
-      addValueOccurrence(`${value}px`, "spacing", currentPath, currentFrame, valueOccurrences, node.id)
+      addValueOccurrence(`${value}px`, "spacing", currentPath, currentFrame, valueOccurrences, node.id, node, context)
     } else if (boundVariable !== undefined || node.boundVariables?.[name] !== undefined) {
       hasTokenizedProperties = true
     }
@@ -307,7 +362,7 @@ function extractNodeValues(
   ]
   paddingProperties.forEach(({ value, boundVariable, name }) => {
     if (value !== undefined && boundVariable === undefined && node.boundVariables?.[name] === undefined) {
-      addValueOccurrence(`${value}px`, "padding", currentPath, currentFrame, valueOccurrences, node.id)
+      addValueOccurrence(`${value}px`, "padding", currentPath, currentFrame, valueOccurrences, node.id, node, context)
     } else if (boundVariable !== undefined || node.boundVariables?.[name] !== undefined) {
       hasTokenizedProperties = true
     }
@@ -317,7 +372,7 @@ function extractNodeValues(
   if (node.cornerRadius !== undefined) {
     const hasCornerRadiusVariable = node.boundVariables?.cornerRadius !== undefined
     if (!hasCornerRadiusVariable && node.boundVariables?.cornerRadius === undefined) {
-      addValueOccurrence(`${node.cornerRadius}px`, "border-radius", currentPath, currentFrame, valueOccurrences, node.id)
+      addValueOccurrence(`${node.cornerRadius}px`, "border-radius", currentPath, currentFrame, valueOccurrences, node.id, node, context)
     } else {
       hasTokenizedProperties = true
     }
@@ -326,7 +381,7 @@ function extractNodeValues(
   // Only extract typography for TEXT nodes
   let typographyTokenizationInfo = { hasTokenizedProperties: false }
   if (node.type === 'TEXT') {
-    typographyTokenizationInfo = extractTypographyFromNode(node, currentPath, currentFrame, valueOccurrences, styleIdToStyle)
+    typographyTokenizationInfo = extractTypographyFromNode(node, currentPath, currentFrame, valueOccurrences, styleIdToStyle, context)
     hasTokenizedProperties = hasTokenizedProperties || typographyTokenizationInfo.hasTokenizedProperties
   }
 
@@ -342,6 +397,7 @@ function extractColorsFromNode(
   currentPath: string,
   currentFrame: FrameInfo | undefined,
   valueOccurrences: ValueOccurrence[],
+  context?: TraversalContext, // Add context parameter
 ): ColorTokenizationInfo {
   let hasTokenizedProperties = false
 
@@ -358,7 +414,7 @@ function extractColorsFromNode(
       if (fill.type === "SOLID" && fill.color && (fill.visible !== false)) {
         if (!isColorBound(fill)) {
           const color = rgbToHex(fill.color)
-          addValueOccurrence(color, "fill", currentPath, currentFrame, valueOccurrences, node.id)
+          addValueOccurrence(color, "fill", currentPath, currentFrame, valueOccurrences, node.id, node, context)
         } else {
           hasTokenizedProperties = true
         }
@@ -372,7 +428,7 @@ function extractColorsFromNode(
       if (stroke.type === "SOLID" && stroke.color && (stroke.visible !== false)) {
         if (!isColorBound(stroke)) {
           const color = rgbToHex(stroke.color)
-          addValueOccurrence(color, "stroke", currentPath, currentFrame, valueOccurrences, node.id)
+          addValueOccurrence(color, "stroke", currentPath, currentFrame, valueOccurrences, node.id, node, context)
         } else {
           hasTokenizedProperties = true
         }
@@ -425,8 +481,16 @@ function addValueOccurrence(
   currentFrame: FrameInfo | undefined,
   valueOccurrences: ValueOccurrence[],
   nodeId?: string,
+  node?: FigmaNode, // Add node parameter to access component information
+  context?: TraversalContext, // Add context parameter for component tracking
 ): void {
   const existingOccurrence = valueOccurrences.find((v) => v.value === value && v.type === type)
+
+  // Determine if this is a component instance based on context or node properties
+  const isComponentInstance = context?.isInsideComponent || 
+    node?.type === 'COMPONENT' || 
+    node?.type === 'INSTANCE' || 
+    node?.componentId !== undefined
 
   const locationData = {
     path: location,
@@ -434,6 +498,10 @@ function addValueOccurrence(
     frameId: currentFrame?.id,
     frameName: currentFrame?.name,
     framePath: currentFrame?.path,
+    // Component-related information
+    isComponentInstance: isComponentInstance,
+    componentId: context?.currentComponentId || node?.componentId,
+    componentName: node?.componentName,
   }
 
   if (existingOccurrence) {
@@ -457,6 +525,10 @@ function convertToNonTokenizedFormat(valueOccurrences: ValueOccurrence[]) {
     frameNames: occurrence.locations.map((loc) => loc.frameName),
     framePaths: occurrence.locations.map((loc) => loc.framePath),
     frameIds: occurrence.locations.map((loc) => loc.frameId),
+    // Component information
+    isComponentInstances: occurrence.locations.map((loc) => loc.isComponentInstance),
+    componentIds: occurrence.locations.map((loc) => loc.componentId),
+    componentNames: occurrence.locations.map((loc) => loc.componentName),
   }))
 }
 
@@ -506,6 +578,10 @@ function enhanceFrameAnalysesWithRecommendations(
         locations: frameLocations.map((loc) => loc.path),
         nodeIds: frameLocations.map((loc) => loc.nodeId).filter((id): id is string => id !== undefined),
         layerNames: frameLocations.map((loc) => loc.path.split(' > ').pop() || 'Unknown Layer'), // Extract layer name from path
+        // Component information
+        isComponentInstances: frameLocations.map((loc) => loc.isComponentInstance || false),
+        componentIds: frameLocations.map((loc) => loc.componentId),
+        componentNames: frameLocations.map((loc) => loc.componentName),
         recommendations: recommendations.map((rec) => ({
           tokenName: rec.tokenName,
           tokenValue: rec.tokenValue,

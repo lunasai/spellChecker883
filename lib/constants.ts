@@ -9,6 +9,15 @@ export const APP_CONFIG = {
     MAX_SUGGESTIONS: 2,
     MAX_ALTERNATIVES: 3,
   },
+  SEMANTIC_PRIORITY: {
+    // Boost values for semantic token matching
+    SEMANTIC_BOOST: 0.15,
+    SEMANTIC_PATTERN_BOOST: 0.12,
+    SIZE_QUALIFIER_BOOST: 0.03,
+    NUMERIC_PENALTY: 0.05,
+    // Minimum confidence difference to override semantic preference
+    MIN_CONFIDENCE_DIFFERENCE: 0.01,
+  },
   COLOR_FORMATS: {
     HEX_PREFIX: "#",
     RGB_PREFIX: "rgb",

@@ -8,7 +8,7 @@ import {
   getPropertyDisplayName,
   UnmatchedBadge,
 } from "./ui-helpers"
-import { generateFigmaNodeUrl } from "@/lib/figma-utils"
+import { generateFigmaNodeUrl, generateFigmaComponentUrl } from "@/lib/figma-utils"
 import type { FrameAnalysis, TokenMatch, UnmatchedValue } from "@/lib/types"
 import { useState, useEffect, useRef } from "react"
 
@@ -52,12 +52,11 @@ interface FrameCardProps {
 }
 
 function FrameCard({ frame }: FrameCardProps) {
-  const hasIssues = (frame.totalIssues || 0) > 0
   const tokenizationPercentage = Math.round(frame.tokenizationRate)
 
   return (
     <Card className="overflow-hidden border border-gray-200/60 shadow-lg bg-white/80 backdrop-blur-sm">
-      <FrameCardHeader frame={frame} hasIssues={hasIssues} tokenizationPercentage={tokenizationPercentage} />
+      <FrameCardHeader frame={frame} tokenizationPercentage={tokenizationPercentage} />
       <CardContent className="p-0">
         {frame.rawValues.length === 0 ? (
           <EmptyFrameContent />
@@ -69,9 +68,8 @@ function FrameCard({ frame }: FrameCardProps) {
   )
 }
 
-function FrameCardHeader({ frame, hasIssues, tokenizationPercentage }: { 
+function FrameCardHeader({ frame, tokenizationPercentage }: { 
   frame: FrameAnalysis
-  hasIssues: boolean
   tokenizationPercentage: number
 }) {
   // Calculate the breakdown for this frame (similar to overview)
@@ -184,22 +182,20 @@ function FrameValuesList({ frame }: { frame: FrameAnalysis }) {
 function ValueTypeSection({ type, typeValues, frame }: { type: string; typeValues: any[]; frame: FrameAnalysis }) {
   // Calculate total occurrences for this property type in this frame
   const totalTypeIssues = typeValues.reduce((sum, valueData) => sum + valueData.count, 0)
-  
+
   return (
     <div className="p-6">
       <div className="flex items-center gap-3 mb-4">
         <div className="p-2 rounded-lg bg-gray-100">
-        {getTypeIcon(type)}
+          {getTypeIcon(type)}
         </div>
         <div>
-        <h4 className="font-semibold text-gray-900 capitalize">
-            {getPropertyDisplayName(type)} • {totalTypeIssues} issues
-        </h4>
+          <h4 className="text-sm font-semibold text-gray-900 capitalize">{type} • {totalTypeIssues} Issues</h4>
         </div>
       </div>
       <div className="space-y-4">
         {typeValues.map((valueData, index) => (
-          <ValueMatchCard key={`${type}-${valueData.value}-${index}`} valueData={valueData} type={type} frame={frame} />
+          <ValueMatchCard key={index} valueData={valueData} type={type} frame={frame} />
         ))}
       </div>
     </div>
@@ -223,6 +219,9 @@ function ValueMatchCard({ valueData, type, frame }: { valueData: any; type: stri
         figmaUrl={frame.figmaUrl}
         alternatives={alternatives}
         layerNames={valueData.layerNames}
+        isComponentInstances={valueData.isComponentInstances}
+        componentIds={valueData.componentIds}
+        componentNames={valueData.componentNames}
       />
     </div>
   )
@@ -238,6 +237,9 @@ function ValueToMatchRelationship({
   figmaUrl,
   alternatives,
   layerNames,
+  isComponentInstances,
+  componentIds,
+  componentNames,
 }: {
   value: string
   type: string
@@ -248,20 +250,30 @@ function ValueToMatchRelationship({
   figmaUrl: string
   alternatives?: any[]
   layerNames?: string[]
+  isComponentInstances?: boolean[]
+  componentIds?: (string | undefined)[]
+  componentNames?: (string | undefined)[]
 }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-4">
-      <FigmaValueDisplay value={value} type={type} />
+        <FigmaValueDisplay value={value} type={type} />
         <ArrowRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
-      <TokenMatchDisplay
-        hasRecommendations={hasRecommendations}
-        primaryRecommendation={primaryRecommendation}
-        count={count}
-        alternatives={alternatives}
-      />
+        <TokenMatchDisplay 
+          hasRecommendations={hasRecommendations} 
+          primaryRecommendation={primaryRecommendation} 
+          count={count} 
+          alternatives={alternatives} 
+        />
       </div>
-      <OccurrencesList nodeIds={nodeIds} layerNames={layerNames} figmaUrl={figmaUrl} />
+      <OccurrencesList 
+        nodeIds={nodeIds} 
+        layerNames={layerNames} 
+        figmaUrl={figmaUrl}
+        isComponentInstances={isComponentInstances}
+        componentIds={componentIds}
+        componentNames={componentNames}
+      />
     </div>
   )
 }
@@ -419,7 +431,21 @@ function UnmatchedTokenDisplay({ count }: { count: number }) {
   )
 }
 
-function OccurrencesList({ nodeIds, layerNames, figmaUrl }: { nodeIds?: string[]; layerNames?: string[]; figmaUrl: string }) {
+function OccurrencesList({ 
+  nodeIds, 
+  layerNames, 
+  figmaUrl, 
+  isComponentInstances, 
+  componentIds,
+  componentNames
+}: { 
+  nodeIds?: string[]
+  layerNames?: string[]
+  figmaUrl: string
+  isComponentInstances?: boolean[]
+  componentIds?: (string | undefined)[]
+  componentNames?: (string | undefined)[]
+}) {
   if (!nodeIds || nodeIds.length === 0) return null
 
   return (
@@ -428,22 +454,41 @@ function OccurrencesList({ nodeIds, layerNames, figmaUrl }: { nodeIds?: string[]
       <div className="flex flex-wrap gap-2">
         {nodeIds.map((nodeId, index) => {
           const layerName = layerNames && layerNames[index] ? layerNames[index] : `Layer ${index + 1}`
+          const isComponentInstance = isComponentInstances && isComponentInstances[index]
+          const componentId = componentIds && componentIds[index]
+          const componentName = componentNames && componentNames[index]
+          
+          // Extract the specific layer name (the actual element within the component)
+          const specificLayerName = layerName.includes(' > ') 
+            ? layerName.split(' > ').pop() || 'Unknown'
+            : layerName
+          
+          // Create the display text
+          const displayText = isComponentInstance && componentName
+            ? `${specificLayerName} • ${componentName}`
+            : specificLayerName
+          
           return (
             <Button
               key={`${nodeId}-${index}`}
               variant="outline"
               size="sm"
               asChild
-              className="h-8 px-3 text-xs bg-white/90 hover:bg-gray-50/90 border-gray-300/60 shadow-sm"
+              className={`h-8 px-3 text-xs shadow-sm ${
+                isComponentInstance 
+                  ? 'bg-blue-50/90 hover:bg-blue-100/90 border-blue-300/60' 
+                  : 'bg-white/90 hover:bg-gray-50/90 border-gray-300/60'
+              }`}
             >
               <a 
                 href={generateFigmaNodeUrl(figmaUrl, nodeId)} 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="flex items-center gap-1"
+                title={isComponentInstance ? `Component Instance${componentId ? ` (ID: ${componentId})` : ''}` : 'Layer'}
               >
                 <ExternalLink className="w-3 h-3" />
-                {layerName}
+                {displayText}
               </a>
             </Button>
           )
