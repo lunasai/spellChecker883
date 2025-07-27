@@ -109,13 +109,13 @@ export default function DesignTokenAuditTool() {
 
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto p-6">
+    <div className="min-h-screen bg-gray-50/50">
+      <div className="container mx-auto p-8">
         <AppHeader />
         
-        <div className="grid grid-cols-4 gap-6">
-          {/* Left Column - Setup (spans 1 column) */}
-          <div className="col-span-1">
+        <div className="grid grid-cols-4 gap-8">
+          {/* Left Column - Setup and Design System (spans 1 column) */}
+          <div className="col-span-1 space-y-8">
             <SetupCard
               tokensFile={tokensFile}
               figmaUrl={figmaUrl}
@@ -134,25 +134,24 @@ export default function DesignTokenAuditTool() {
               onUseThemeToggle={setUseTheme}
               onAnalysis={handleAnalysis}
             />
+            
+            {results && (
+              <DesignSystemCard results={results} />
+            )}
           </div>
 
           {/* Right Column - Results (spans 3 columns) */}
-          <div className="col-span-3 space-y-6">
+          <div className="col-span-3 space-y-8">
             {results ? (
               <>
-                {/* Overview and Design System Cards */}
-                <div className="grid grid-cols-8 gap-6">
-                  <div className="col-span-5">
-                    <OverviewCard results={results} />
-                  </div>
-                  <div className="col-span-3">
-                    <DesignSystemCard results={results} />
-                  </div>
+                {/* Overview Card */}
+                <div className="mb-12">
+                  <OverviewCard results={results} />
                 </div>
                 
                 {/* Frame Analysis Section */}
                 <div>
-                  <div className="mb-6">
+                  <div className="mb-8">
                     <div className="flex items-center justify-between">
                       <div>
                         <h2 className="text-2xl font-bold text-gray-900">Frame by frame</h2>
@@ -182,18 +181,15 @@ export default function DesignTokenAuditTool() {
 
 function AppHeader() {
   return (
-    <div className="text-center mb-8">
-      <div className="inline-flex items-center gap-3 mb-4">
-        <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600">
-          <FileText className="w-8 h-8 text-white" />
+    <div className="text-center mb-12 mt-16">
+      <div className="inline-flex items-center gap-3">
+        <div className="p-3 rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-300">
+          <span className="text-2xl">🐱</span>
         </div>
-        <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
+        <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
           Spell checker
         </h1>
       </div>
-      <p className="text-lg text-gray-600 max-w-2xl mx-auto leading-relaxed">
-        Upload your design tokens and analyze Figma files to find hardcoded values that should be tokenized
-      </p>
     </div>
   )
 }
@@ -210,7 +206,7 @@ function OverviewCard({ results }: { results: AnalysisResult }) {
   const matchesPercentage = totalAnalyzed > 0 ? Math.round((matches / totalAnalyzed) * 100) : 0
   const unmatchesPercentage = totalAnalyzed > 0 ? Math.round((unmatches / totalAnalyzed) * 100) : 0
 
-  // Calculate issue categories
+  // Calculate issue categories from all non-tokenized values
   const issueCategories = {
     fill: 0,
     stroke: 0,
@@ -220,111 +216,100 @@ function OverviewCard({ results }: { results: AnalysisResult }) {
     'border-radius': 0
   }
 
-  // Count issues from unmatched values
-  results.unmatchedValues.forEach(item => {
+  // Count all non-tokenized values by type
+  results.figmaAnalysis.nonTokenizedValues.forEach(item => {
     if (issueCategories.hasOwnProperty(item.type)) {
       issueCategories[item.type as keyof typeof issueCategories] += item.count
     }
   })
 
-  // Count issues from non-tokenized values that don't have matches
-  results.figmaAnalysis.nonTokenizedValues.forEach(item => {
-    const hasMatch = results.tokenMatches.some(match => 
-      match.figmaValue === item.value && match.nodeIds?.some(id => item.nodeIds?.includes(id))
-    )
-    if (!hasMatch && issueCategories.hasOwnProperty(item.type)) {
-      issueCategories[item.type as keyof typeof issueCategories] += item.count
-    }
-  })
-
-  // Get top 3 issue categories
-  const topIssueCategories = Object.entries(issueCategories)
+  // Get all issue categories ranked by count
+  const allIssueCategories = Object.entries(issueCategories)
     .filter(([_, count]) => count > 0)
     .sort(([_, a], [__, b]) => b - a)
-    .slice(0, 3)
 
   return (
     <Card className="border border-gray-200/60 shadow-lg bg-white/80 backdrop-blur-sm">
-      <CardHeader className="pb-4">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-xl font-semibold text-gray-900">Overview</CardTitle>
-          <div className="flex items-center gap-2">
-            <Palette className="w-4 h-4 text-blue-600" />
-            <span className="text-sm text-gray-600">
-              {results.selectedTheme ? results.selectedTheme.name : "Default (No theme)"}
-            </span>
-          </div>
-        </div>
+      <CardHeader className="pb-6">
+        <CardTitle className="text-xl font-semibold text-gray-900">Overview</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Main Tokenization Overview */}
-        <div className="text-center">
-          <div className="text-4xl font-bold text-gray-900 mb-2">{tokenizedPercentage}%</div>
-          <div className="text-lg text-gray-600 mb-4">of values are properly tokenized</div>
-          
-          {/* Compact metrics */}
-          <div className="flex justify-center gap-8 text-sm text-gray-500">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <span>{tokenizedValues} tokenized</span>
+      <CardContent className="space-y-6 p-6">
+        <div className="grid grid-cols-2 gap-6">
+          {/* Left Column - Tokenization Overview */}
+          <div className="text-center">
+            <div className="space-y-3">
+              {/* Main percentage */}
+              <div>
+                <div className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+                  {tokenizedPercentage}%
+                </div>
+                <div className="text-base text-gray-600">tokenized</div>
+              </div>
+              
+              {/* Percentage breakdown */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-center gap-2 text-xs">
+                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+                  <span className="text-gray-600">{matchesPercentage}%</span>
+                  <span className="text-gray-400">can be tokenized</span>
+                </div>
+                <div className="flex items-center justify-center gap-2 text-xs">
+                  <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>
+                  <span className="text-gray-600">{unmatchesPercentage}%</span>
+                  <span className="text-gray-400">need attention</span>
+                </div>
+              </div>
+              
+              {/* Raw counts */}
+              <div className="flex justify-center gap-3 text-xs text-gray-500 pt-1 border-t border-gray-100">
+                <span>{tokenizedValues} tokenized</span>
+                <span>{matches} matches</span>
+                <span>{unmatches} issues</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-              <span>{matches} can be tokenized</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-              <span>{unmatches} need attention</span>
-            </div>
+          </div>
+
+          {/* Right Column - Issue Categories */}
+          <div>
+            {allIssueCategories.length > 0 ? (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-medium text-gray-700 uppercase tracking-wide">Issues by type</h3>
+                  <span className="text-xs text-gray-400">
+                    {results.figmaAnalysis.nonTokenizedValues.reduce((sum, item) => sum + item.count, 0)} total
+                  </span>
+                </div>
+                
+                <div className="flex flex-wrap gap-1.5">
+                  {allIssueCategories.map(([category, count]) => {
+                    const categoryColors = {
+                      fill: { bg: 'bg-red-100', text: 'text-red-700', icon: '🎨' },
+                      stroke: { bg: 'bg-orange-100', text: 'text-orange-700', icon: '✏️' },
+                      spacing: { bg: 'bg-blue-100', text: 'text-blue-700', icon: '↔️' },
+                      padding: { bg: 'bg-purple-100', text: 'text-purple-700', icon: '📏' },
+                      typography: { bg: 'bg-green-100', text: 'text-green-700', icon: '📝' },
+                      'border-radius': { bg: 'bg-yellow-100', text: 'text-yellow-700', icon: '🔲' }
+                    }
+                    const colors = categoryColors[category as keyof typeof categoryColors]
+                    
+                    return (
+                      <div key={category} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${colors.bg} ${colors.text}`}>
+                        <span className="text-xs">{colors.icon}</span>
+                        <span className="capitalize">{category.replace('-', ' ')}</span>
+                        <span className="font-bold">{count}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-gray-400 text-xs">
+                <div className="text-lg mb-1">🎉</div>
+                <div>All good!</div>
+              </div>
+            )}
           </div>
         </div>
-
-        {/* Issue Categories */}
-        {topIssueCategories.length > 0 && (
-          <div className="pt-4 border-t border-gray-200/60">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Top Issue Categories</h3>
-              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                {unmatches} total issues
-              </span>
-            </div>
-            
-            <div className="space-y-3">
-              {topIssueCategories.map(([category, count], index) => {
-                const percentage = unmatches > 0 ? Math.round((count / unmatches) * 100) : 0
-                const categoryColors = {
-                  fill: { bg: 'bg-red-50/50', border: 'border-red-200/30', text: 'text-red-700', icon: '🎨' },
-                  stroke: { bg: 'bg-orange-50/50', border: 'border-orange-200/30', text: 'text-orange-700', icon: '✏️' },
-                  spacing: { bg: 'bg-blue-50/50', border: 'border-blue-200/30', text: 'text-blue-700', icon: '↔️' },
-                  padding: { bg: 'bg-purple-50/50', border: 'border-purple-200/30', text: 'text-purple-700', icon: '📏' },
-                  typography: { bg: 'bg-green-50/50', border: 'border-green-200/30', text: 'text-green-700', icon: '📝' },
-                  'border-radius': { bg: 'bg-yellow-50/50', border: 'border-yellow-200/30', text: 'text-yellow-700', icon: '🔲' }
-                }
-                const colors = categoryColors[category as keyof typeof categoryColors]
-                
-                return (
-                  <div key={category} className={`flex items-center justify-between p-3 rounded-lg ${colors.bg} border ${colors.border}`}>
-                    <div className="flex items-center gap-3">
-                      <span className="text-lg">{colors.icon}</span>
-                      <div>
-                        <div className="font-medium text-gray-900 capitalize">
-                          {category.replace('-', ' ')}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {count} {count === 1 ? 'issue' : 'issues'}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className={`text-lg font-bold ${colors.text}`}>{percentage}%</div>
-                      <div className="text-xs text-gray-500">of issues</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
       </CardContent>
     </Card>
   )
@@ -337,57 +322,28 @@ function DesignSystemCard({ results }: { results: AnalysisResult }) {
 
   return (
     <Card className="border border-gray-200/60 shadow-lg bg-white/80 backdrop-blur-sm">
-      <CardHeader className="pb-4">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-xl font-semibold text-gray-900">Design System</CardTitle>
-          <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-purple-600" />
-            <span className="text-sm text-gray-600">Available Tokens</span>
-          </div>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <FileText className="w-4 h-4 text-purple-600" />
+          <CardTitle className="text-lg font-semibold text-gray-900">Design System</CardTitle>
         </div>
       </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Design System Statistics */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="text-center p-3 rounded-lg bg-blue-50/50 border border-blue-200/30">
-            <div className="text-xl font-bold text-blue-700">{totalTokens}</div>
-            <div className="text-sm text-gray-700 font-medium">Total Tokens</div>
-          </div>
-          <div className="text-center p-3 rounded-lg bg-green-50/50 border border-green-200/30">
-            <div className="text-xl font-bold text-green-700">{semanticTokensCount}</div>
-            <div className="text-sm text-gray-700 font-medium">Semantic Tokens</div>
-          </div>
-          <div className="text-center p-3 rounded-lg bg-purple-50/50 border border-purple-200/30">
-            <div className="text-xl font-bold text-purple-700">{baseTokensCount}</div>
-            <div className="text-sm text-gray-700 font-medium">Base Tokens</div>
-          </div>
+      <CardContent className="space-y-4">
+        {/* Simple Token Count */}
+        <div className="text-center">
+          <div className="text-2xl font-bold text-gray-900">{totalTokens}</div>
+          <div className="text-sm text-gray-600">Available Tokens</div>
         </div>
 
-        {/* Token Distribution */}
-        <div className="pt-4 border-t border-gray-200/60">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-gray-700">Token Distribution</span>
-            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">{totalTokens} total</span>
+        {/* Token Types */}
+        <div className="flex justify-between text-xs text-gray-500">
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+            <span>{semanticTokensCount} semantic</span>
           </div>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-2 rounded-lg bg-green-50/30 border border-green-200/20">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                <span className="text-sm text-gray-700 font-medium">Semantic Tokens</span>
-              </div>
-              <span className="text-sm font-bold text-gray-900">
-                {totalTokens > 0 ? Math.round((semanticTokensCount / totalTokens) * 100) : 0}%
-              </span>
-            </div>
-            <div className="flex items-center justify-between p-2 rounded-lg bg-purple-50/30 border border-purple-200/20">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
-                <span className="text-sm text-gray-700 font-medium">Base Tokens</span>
-              </div>
-              <span className="text-sm font-bold text-gray-900">
-                {totalTokens > 0 ? Math.round((baseTokensCount / totalTokens) * 100) : 0}%
-              </span>
-            </div>
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+            <span>{baseTokensCount} base</span>
           </div>
         </div>
       </CardContent>

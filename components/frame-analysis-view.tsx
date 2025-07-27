@@ -34,7 +34,7 @@ export function FrameAnalysisView({ frameAnalyses, tokenMatches, unmatchedValues
 
 function EmptyFramesMessage() {
   return (
-    <Card className="border-dashed border-2 border-gray-200 bg-gray-50/50">
+    <Card className="border-dashed border-2 border-gray-200/60 bg-gray-50/80 backdrop-blur-sm shadow-lg">
       <CardContent className="p-12 text-center">
         <Frame className="w-16 h-16 mx-auto text-gray-400 mb-6" />
         <h3 className="text-xl font-semibold text-gray-900 mb-3">No Parent Frames Found</h3>
@@ -56,7 +56,7 @@ function FrameCard({ frame }: FrameCardProps) {
   const tokenizationPercentage = Math.round(frame.tokenizationRate)
 
   return (
-    <Card className="overflow-hidden border-0 shadow-sm bg-white">
+    <Card className="overflow-hidden border border-gray-200/60 shadow-lg bg-white/80 backdrop-blur-sm">
       <FrameCardHeader frame={frame} hasIssues={hasIssues} tokenizationPercentage={tokenizationPercentage} />
       <CardContent className="p-0">
         {frame.rawValues.length === 0 ? (
@@ -74,13 +74,33 @@ function FrameCardHeader({ frame, hasIssues, tokenizationPercentage }: {
   hasIssues: boolean
   tokenizationPercentage: number
 }) {
+  // Calculate the breakdown for this frame (similar to overview)
+  const tokenizedValues = frame.tokenizedElements || 0
+  const frameMatches = frame.rawValues.reduce((total, valueData) => {
+    return total + (valueData.recommendations && valueData.recommendations.length > 0 ? valueData.count : 0)
+  }, 0)
+  const frameIssues = frame.rawValues.reduce((total, valueData) => {
+    return total + (valueData.recommendations && valueData.recommendations.length > 0 ? 0 : valueData.count)
+  }, 0)
+  
+  const totalAnalyzed = tokenizedValues + frameMatches + frameIssues
+  
+  // Calculate percentages
+  const tokenizedPercentage = totalAnalyzed > 0 ? Math.round((tokenizedValues / totalAnalyzed) * 100) : 0
+  const matchesPercentage = totalAnalyzed > 0 ? Math.round((frameMatches / totalAnalyzed) * 100) : 0
+  const issuesPercentage = totalAnalyzed > 0 ? Math.round((frameIssues / totalAnalyzed) * 100) : 0
+  
+  // Determine overall status
+  const frameHasIssues = frameIssues > 0
+  const hasMatches = frameMatches > 0
+
   return (
-    <CardHeader className="bg-gradient-to-r from-gray-50 to-gray-100/50 border-b border-gray-200">
+    <CardHeader className="bg-gradient-to-r from-gray-50/80 to-gray-100/60 border-b border-gray-200/60">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
         <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${hasIssues ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
-              {hasIssues ? <AlertCircle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+            <div className={`p-2 rounded-lg ${!frameHasIssues ? 'bg-green-100 text-green-600' : hasMatches ? 'bg-blue-100 text-blue-600' : 'bg-yellow-100 text-yellow-600'}`}>
+              {!frameHasIssues ? <CheckCircle2 className="w-5 h-5" /> : hasMatches ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
             </div>
           <div>
               <CardTitle className="text-lg font-semibold text-gray-900">{frame.frameName}</CardTitle>
@@ -94,18 +114,33 @@ function FrameCardHeader({ frame, hasIssues, tokenizationPercentage }: {
         <div className="flex items-center gap-4">
           <div className="text-right">
             <div className="text-sm font-medium text-gray-700 mb-1">
-              {hasIssues ? `${frame.totalIssues || 0} issues found` : 'All values tokenized'}
+              {tokenizedPercentage}% tokenized • {frameMatches} matches
             </div>
             <div className="flex items-center gap-2">
-              <Progress 
-                value={frame.tokenizationRate} 
-                className="w-20 h-2" 
-                style={{
-                  '--progress-background': hasIssues ? '#fef2f2' : '#f0fdf4',
-                  '--progress-foreground': hasIssues ? '#dc2626' : '#16a34a'
-                } as React.CSSProperties}
-              />
-              <span className="text-xs font-medium text-gray-600">• {tokenizationPercentage}%</span>
+              <div className="relative w-20 h-2 bg-gray-200 rounded-full overflow-hidden">
+                {/* Tokenized (green) */}
+                <div 
+                  className="absolute left-0 top-0 h-full bg-green-500 rounded-l-full"
+                  style={{ width: `${tokenizedPercentage}%` }}
+                />
+                {/* Matches (blue) */}
+                <div 
+                  className="absolute top-0 h-full bg-blue-500"
+                  style={{ 
+                    left: `${tokenizedPercentage}%`, 
+                    width: `${matchesPercentage}%` 
+                  }}
+                />
+                {/* Issues (yellow) */}
+                <div 
+                  className="absolute top-0 h-full bg-yellow-500 rounded-r-full"
+                  style={{ 
+                    left: `${tokenizedPercentage + matchesPercentage}%`, 
+                    width: `${issuesPercentage}%` 
+                  }}
+                />
+              </div>
+              <span className="text-xs font-medium text-gray-600">• {tokenizedPercentage + matchesPercentage}%</span>
             </div>
           </div>
           <Button variant="outline" size="sm" asChild className="flex items-center gap-2 bg-white hover:bg-gray-50">
@@ -177,7 +212,7 @@ function ValueMatchCard({ valueData, type, frame }: { valueData: any; type: stri
   const alternatives = hasRecommendations ? valueData.recommendations.slice(1, 3) : []
 
   return (
-    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+    <div className="bg-gray-50/80 rounded-lg p-4 border border-gray-200/60 shadow-sm">
       <ValueToMatchRelationship
         value={valueData.value}
         type={type}
@@ -335,11 +370,11 @@ function TokenBadges({ recommendation, count, alternatives }: { recommendation: 
             <ChevronDown className={`w-3 h-3 transition-transform ${showAlternatives ? 'rotate-180' : ''}`} />
           </Badge>
           {showAlternatives && (
-            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-64 p-2 max-h-48 overflow-y-auto">
+            <div className="absolute top-full left-0 mt-1 bg-white/95 backdrop-blur-sm border border-gray-200/60 rounded-lg shadow-lg z-10 min-w-64 p-2 max-h-48 overflow-y-auto">
               <div className="text-xs font-medium text-gray-700 mb-2">Alternative Tokens:</div>
               <div className="space-y-1">
                 {alternatives.map((alternative, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs">
+                  <div key={index} className="flex items-center justify-between p-2 bg-gray-50/80 rounded text-xs">
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-gray-900 truncate" title={alternative.fullTokenPath}>
                         {alternative.tokenName}
@@ -388,7 +423,7 @@ function OccurrencesList({ nodeIds, layerNames, figmaUrl }: { nodeIds?: string[]
   if (!nodeIds || nodeIds.length === 0) return null
 
   return (
-    <div className="mt-4 pt-4 border-t border-gray-200">
+    <div className="mt-4 pt-4 border-t border-gray-200/60">
       <h5 className="text-xs font-medium text-gray-700 mb-3">Occurrences:</h5>
       <div className="flex flex-wrap gap-2">
         {nodeIds.map((nodeId, index) => {
@@ -399,7 +434,7 @@ function OccurrencesList({ nodeIds, layerNames, figmaUrl }: { nodeIds?: string[]
               variant="outline"
               size="sm"
               asChild
-              className="h-8 px-3 text-xs bg-white hover:bg-gray-50 border-gray-300"
+              className="h-8 px-3 text-xs bg-white/90 hover:bg-gray-50/90 border-gray-300/60 shadow-sm"
             >
               <a 
                 href={generateFigmaNodeUrl(figmaUrl, nodeId)} 
