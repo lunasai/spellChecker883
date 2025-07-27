@@ -1,0 +1,80 @@
+{
+  "$themes": [
+    {
+      "id": "light",
+      "name": "Light Theme",
+      "selectedTokenSets": {
+        "core": "enabled",
+        "light": "source",
+        "dark": "disabled"
+      }
+    },
+    {
+      "id": "dark",
+      "name": "Dark Theme",
+      "selectedTokenSets": {
+        "core": "enabled",
+        "light": "disabled",
+        "dark": "source"
+      }
+    }
+  ],
+  "core": {
+    "color": {
+      "primary": {
+        "$value": "#007AFF",
+        "$type": "color"
+      },
+      "secondary": {
+        "$value": "#5856D6",
+        "$type": "color"
+      }
+    },
+    "spacing": {
+      "small": {
+        "$value": "8px",
+        "$type": "dimension"
+      },
+      "medium": {
+        "$value": "16px",
+        "$type": "dimension"
+      },
+      "large": {
+        "$value": "24px",
+        "$type": "dimension"
+      }
+    }
+  },
+  "light": {
+    "color": {
+      "background": {
+        "$value": "#FFFFFF",
+        "$type": "color"
+      },
+      "text": {
+        "$value": "#000000",
+        "$type": "color"
+      },
+      "surface": {
+        "$value": "#F2F2F7",
+        "$type": "color"
+      }
+    }
+  },
+  "dark": {
+    "color": {
+      "background": {
+        "$value": "#000000",
+        "$type": "color"
+      },
+      "text": {
+        "$value": "#FFFFFF",
+        "$type": "color"
+      },
+      "surface": {
+        "$value": "#1C1C1E",
+        "$type": "color"
+      }
+    }
+  }
+} 

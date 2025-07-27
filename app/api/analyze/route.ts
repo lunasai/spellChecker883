@@ -1,0 +1,164 @@
+import type { NextRequest } from "next/server"
+import { ERROR_MESSAGES } from "@/lib/constants"
+import { extractFileIdFromUrl } from "@/lib/figma-utils"
+import { resolveTokensWithSemantics, resolveTokensWithTheme } from "@/lib/token-utils"
+import { analyzeFigmaFileByFrames } from "@/lib/figma-analyzer"
+import { matchValuesWithTokens } from "@/lib/token-matcher"
+import type { DesignToken, Theme } from "@/lib/types"
+import { fetchFigmaTextStyles } from '@/lib/figma-analyzer'
+
+export async function POST(request: NextRequest) {
+  try {
+    const formData = await request.formData()
+    const tokensFile = formData.get("tokensFile") as File
+    const figmaUrl = formData.get("figmaUrl") as string
+    const figmaToken = formData.get("figmaToken") as string
+    const selectedThemeJson = formData.get("selectedTheme") as string
+
+    // Validate required fields
+    if (!tokensFile || !figmaUrl || !figmaToken) {
+      return Response.json({ error: ERROR_MESSAGES.MISSING_FIELDS }, { status: 400 })
+    }
+
+    console.log("Starting analysis...")
+
+    // Parse and validate tokens file
+    const tokens = await parseTokensFile(tokensFile)
+    console.log("Parsed tokens file successfully")
+
+    // Parse selected theme if provided
+    const selectedTheme = selectedThemeJson ? JSON.parse(selectedThemeJson) as Theme : null
+    console.log("Selected theme:", selectedTheme?.name || "No theme selected")
+
+    // Resolve tokens based on theme selection
+    let resolvedTokens: Record<string, any>
+    if (selectedTheme) {
+      console.log("Resolving tokens with selected theme...")
+      resolvedTokens = resolveTokensWithTheme(tokens, selectedTheme)
+    } else {
+      console.log("Resolving tokens without theme selection...")
+      resolvedTokens = resolveTokensWithSemantics(tokens)
+    }
+
+    console.log("Resolution complete:")
+    console.log("- Total resolved tokens:", Object.keys(resolvedTokens).length)
+    console.log("- Semantic tokens:", Object.values(resolvedTokens).filter((t) => t.isReference).length)
+    console.log("- Base tokens:", Object.values(resolvedTokens).filter((t) => !t.isReference).length)
+
+    // Show some examples of resolved tokens
+    const semanticExamples = Object.entries(resolvedTokens)
+      .filter(([_, token]) => token.isReference)
+      .slice(0, 5)
+
+    console.log("Example semantic token resolutions:")
+    semanticExamples.forEach(([name, token]) => {
+      console.log(`  ${name}: ${token.originalReference} → ${token.value}`)
+    })
+
+    // Fetch and analyze Figma file
+    console.log("Fetching Figma file...")
+    const figmaData = await fetchFigmaFile(figmaUrl, figmaToken)
+
+    // Fetch Figma text styles for variable detection in styles
+    const fileId = extractFileIdFromUrl(figmaUrl)
+    let styleIdToStyle = {}
+    if (fileId) {
+      try {
+        styleIdToStyle = await fetchFigmaTextStyles(fileId, figmaToken)
+        console.log("Fetched Figma text styles for variable detection.")
+      } catch (err) {
+        console.warn("Failed to fetch Figma text styles:", err)
+      }
+    }
+
+    console.log("Analyzing Figma file...")
+    const analysisResult = analyzeFigmaFileByFrames(figmaData.document, figmaUrl, resolvedTokens, styleIdToStyle)
+
+    console.log("Figma analysis complete:")
+    console.log("- Total elements:", analysisResult.totalElements)
+    console.log("- Non-tokenized values:", analysisResult.nonTokenizedValues.length)
+    console.log("- Frame analyses:", analysisResult.frameAnalyses.length)
+
+    // Match values with tokens using enhanced matching logic
+    console.log("Matching values with tokens...")
+    const matchResult = matchValuesWithTokens(analysisResult.nonTokenizedValues, resolvedTokens)
+
+    console.log("Matching complete:")
+    console.log("- Token matches:", matchResult.tokenMatches.length)
+    console.log("- Unmatched values:", matchResult.unmatchedValues.length)
+
+    return Response.json({
+      figmaAnalysis: {
+        nonTokenizedValues: analysisResult.nonTokenizedValues,
+        totalElements: analysisResult.totalElements,
+        tokenizedElements: analysisResult.tokenizedElements,
+        frameAnalyses: analysisResult.frameAnalyses,
+      },
+      tokenMatches: matchResult.tokenMatches,
+      unmatchedValues: matchResult.unmatchedValues,
+      selectedTheme,
+      debugInfo: {
+        totalResolvedTokens: Object.keys(resolvedTokens).length,
+        semanticTokensCount: Object.values(resolvedTokens).filter((t) => t.isReference).length,
+        rawTokensCount: Object.values(resolvedTokens).filter((t) => !t.isReference).length,
+        exampleResolutions: semanticExamples.map(([name, token]) => ({
+          tokenName: name,
+          originalReference: token.originalReference,
+          resolvedValue: token.value,
+          referenceChain: token.referenceChain,
+        })),
+      },
+    })
+  } catch (error) {
+    console.error("Analysis error:", error)
+    return Response.json(
+      {
+        error: ERROR_MESSAGES.ANALYSIS_FAILED,
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    )
+  }
+}
+
+async function parseTokensFile(tokensFile: File): Promise<DesignToken> {
+  const tokensContent = await tokensFile.text()
+
+  if (!tokensContent.trim()) {
+    throw new Error(ERROR_MESSAGES.EMPTY_FILE)
+  }
+
+  try {
+    const tokens = JSON.parse(tokensContent)
+
+    if (!tokens || typeof tokens !== "object" || Array.isArray(tokens)) {
+      throw new Error(ERROR_MESSAGES.INVALID_FILE_FORMAT)
+    }
+
+    return tokens
+  } catch (parseError) {
+    console.error("Failed to parse tokens file:", parseError)
+    throw new Error(ERROR_MESSAGES.INVALID_JSON)
+  }
+}
+
+async function fetchFigmaFile(figmaUrl: string, figmaToken: string) {
+  const fileId = extractFileIdFromUrl(figmaUrl)
+  if (!fileId) {
+    throw new Error(ERROR_MESSAGES.INVALID_FIGMA_URL)
+  }
+
+  const figmaResponse = await fetch(`https://api.figma.com/v1/files/${fileId}`, {
+    headers: {
+      "X-Figma-Token": figmaToken,
+    },
+  })
+
+  if (!figmaResponse.ok) {
+    throw new Error(`${ERROR_MESSAGES.FIGMA_FETCH_FAILED}: ${figmaResponse.status} ${figmaResponse.statusText}`)
+  }
+
+  return figmaResponse.json()
+}
+
+
