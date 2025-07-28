@@ -11,6 +11,7 @@ import {
 import { generateFigmaNodeUrl, generateFigmaComponentUrl } from "@/lib/figma-utils"
 import type { FrameAnalysis, TokenMatch, UnmatchedValue } from "@/lib/types"
 import { useState, useEffect, useRef } from "react"
+import { getStatusColor, getConfidenceColor, VISUALIZATION_COLORS } from "@/lib/color-constants"
 
 interface FrameAnalysisViewProps {
   frameAnalyses: FrameAnalysis[]
@@ -106,6 +107,13 @@ function FrameCardHeader({
   // Determine overall status
   const frameHasIssues = frameIssues > 0
   const hasMatches = frameMatches > 0
+  
+  // Get status colors
+  const statusColors = !frameHasIssues 
+    ? getStatusColor('tokenized')
+    : hasMatches 
+    ? getStatusColor('matched')
+    : getStatusColor('needs_attention')
 
   return (
     <CardHeader 
@@ -115,7 +123,13 @@ function FrameCardHeader({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${!frameHasIssues ? 'bg-green-100 text-green-600' : hasMatches ? 'bg-blue-100 text-blue-600' : 'bg-yellow-100 text-yellow-600'}`}>
+            <div 
+              className="p-2 rounded-lg"
+              style={{ 
+                backgroundColor: statusColors.light,
+                color: statusColors.dark
+              }}
+            >
               {!frameHasIssues ? <CheckCircle2 className="w-5 h-5" /> : hasMatches ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
             </div>
             <div>
@@ -136,23 +150,28 @@ function FrameCardHeader({
               <div className="relative w-20 h-2 bg-gray-200 rounded-full overflow-hidden">
                 {/* Tokenized (green) */}
                 <div 
-                  className="absolute left-0 top-0 h-full bg-green-500 rounded-l-full"
-                  style={{ width: `${tokenizedPercentage}%` }}
+                  className="absolute left-0 top-0 h-full rounded-l-full"
+                  style={{ 
+                    width: `${tokenizedPercentage}%`,
+                    backgroundColor: VISUALIZATION_COLORS.STATUS.TOKENIZED.primary
+                  }}
                 />
                 {/* Matches (blue) */}
                 <div 
-                  className="absolute top-0 h-full bg-blue-500"
+                  className="absolute top-0 h-full"
                   style={{ 
                     left: `${tokenizedPercentage}%`, 
-                    width: `${matchesPercentage}%` 
+                    width: `${matchesPercentage}%`,
+                    backgroundColor: VISUALIZATION_COLORS.STATUS.MATCHED.primary
                   }}
                 />
-                {/* Issues (yellow) */}
+                {/* Issues (amber) */}
                 <div 
-                  className="absolute top-0 h-full bg-yellow-500 rounded-r-full"
+                  className="absolute top-0 h-full rounded-r-full"
                   style={{ 
                     left: `${tokenizedPercentage + matchesPercentage}%`, 
-                    width: `${issuesPercentage}%` 
+                    width: `${issuesPercentage}%`,
+                    backgroundColor: VISUALIZATION_COLORS.STATUS.NEEDS_ATTENTION.primary
                   }}
                 />
               </div>
@@ -437,8 +456,13 @@ function TokenBadges({ recommendation, count, alternatives }: { recommendation: 
   return (
     <div className="flex items-center gap-2">
       <Badge 
-        variant={matchPercentage === 100 ? "default" : "secondary"} 
-        className={`text-xs ${matchPercentage === 100 ? 'bg-green-100 text-green-800 border-green-200' : 'bg-blue-100 text-blue-800 border-blue-200'}`}
+        variant="outline" 
+        className="text-xs"
+        style={{
+          backgroundColor: getConfidenceColor(recommendation.confidence).light,
+          color: getConfidenceColor(recommendation.confidence).text,
+          borderColor: getConfidenceColor(recommendation.confidence).border
+        }}
       >
         {matchPercentage}% match
       </Badge>
@@ -474,7 +498,12 @@ function TokenBadges({ recommendation, count, alternatives }: { recommendation: 
                     </div>
                     <Badge 
                       variant="outline" 
-                      className={`text-xs ml-2 ${Math.round(alternative.confidence * 100) === 100 ? 'bg-green-100 text-green-800 border-green-200' : 'bg-blue-100 text-blue-800 border-blue-200'}`}
+                      className="text-xs ml-2"
+                      style={{
+                        backgroundColor: getConfidenceColor(alternative.confidence).light,
+                        color: getConfidenceColor(alternative.confidence).text,
+                        borderColor: getConfidenceColor(alternative.confidence).border
+                      }}
                     >
                       {Math.round(alternative.confidence * 100)}%
                     </Badge>
@@ -494,7 +523,15 @@ function UnmatchedTokenDisplay({ count }: { count: number }) {
     <div className="flex-1 min-w-0">
       <div className="flex items-center gap-2">
         <UnmatchedBadge />
-        <Badge variant="outline" className="text-xs bg-gray-100 text-gray-600">
+        <Badge 
+          variant="outline" 
+          className="text-xs"
+          style={{
+            backgroundColor: VISUALIZATION_COLORS.NEUTRAL.background,
+            color: VISUALIZATION_COLORS.NEUTRAL.textLight,
+            borderColor: VISUALIZATION_COLORS.NEUTRAL.border
+          }}
+        >
           {count} occurrence{count !== 1 ? 's' : ''}
         </Badge>
       </div>

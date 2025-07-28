@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge"
 import { APP_CONFIG, UI_LABELS } from "@/lib/constants"
+import { getConfidenceColor, VISUALIZATION_COLORS } from "@/lib/color-constants"
 import { Palette, Type, BracketsIcon as Spacing, CornerUpRight } from "lucide-react"
 import type { ReactElement } from "react"
 
@@ -17,25 +18,18 @@ export function getTypeIcon(type: string) {
 }
 
 export function getConfidenceBadgeColor(confidence: number): string {
-  if (confidence >= APP_CONFIG.CONFIDENCE_THRESHOLDS.HIGH) {
-    return "bg-green-100 text-green-800 border-green-300"
-  }
-  if (confidence >= APP_CONFIG.CONFIDENCE_THRESHOLDS.MEDIUM) {
-    return "bg-orange-100 text-orange-800 border-orange-300"
-  }
-  return "bg-red-100 text-red-800 border-red-300"
+  const colors = getConfidenceColor(confidence)
+  return `bg-[${colors.light}] text-[${colors.text}] border-[${colors.border}]`
 }
 
 export function getMatchBorderColor(confidence: number): string {
-  if (confidence >= APP_CONFIG.CONFIDENCE_THRESHOLDS.HIGH) return "border-green-400"
-  if (confidence >= APP_CONFIG.CONFIDENCE_THRESHOLDS.MEDIUM) return "border-orange-400"
-  return "border-red-400"
+  const colors = getConfidenceColor(confidence)
+  return `border-[${colors.primary}]`
 }
 
 export function getMatchFillColor(confidence: number): string {
-  if (confidence >= APP_CONFIG.CONFIDENCE_THRESHOLDS.HIGH) return "bg-green-50"
-  if (confidence >= APP_CONFIG.CONFIDENCE_THRESHOLDS.MEDIUM) return "bg-orange-50"
-  return "bg-red-50"
+  const colors = getConfidenceColor(confidence)
+  return `bg-[${colors.light}]`
 }
 
 export function getPropertyDisplayName(type: string): string {
@@ -70,7 +64,15 @@ interface SemanticTokenBadgeProps {
 
 export function SemanticTokenBadge({ className = "" }: SemanticTokenBadgeProps) {
   return (
-    <Badge variant="outline" className={`bg-blue-100 text-blue-800 border-blue-300 text-xs font-bold ${className}`}>
+    <Badge 
+      variant="outline" 
+      className={`text-xs font-bold ${className}`}
+      style={{
+        backgroundColor: VISUALIZATION_COLORS.STATUS.MATCHED.light,
+        color: VISUALIZATION_COLORS.STATUS.MATCHED.text,
+        borderColor: VISUALIZATION_COLORS.STATUS.MATCHED.border
+      }}
+    >
       {UI_LABELS.SEMANTIC}
     </Badge>
   )
@@ -82,7 +84,15 @@ interface UnmatchedBadgeProps {
 
 export function UnmatchedBadge({ className = "" }: UnmatchedBadgeProps) {
   return (
-    <Badge variant="destructive" className={`text-xs ${className}`}>
+    <Badge 
+      variant="outline" 
+      className={`text-xs ${className}`}
+      style={{
+        backgroundColor: VISUALIZATION_COLORS.STATUS.ISSUES.light,
+        color: VISUALIZATION_COLORS.STATUS.ISSUES.text,
+        borderColor: VISUALIZATION_COLORS.STATUS.ISSUES.border
+      }}
+    >
       {UI_LABELS.UNMATCHED}
     </Badge>
   )

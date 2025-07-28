@@ -2,111 +2,30 @@
 
 import type React from "react"
 import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { AlertCircle, CheckCircle, Upload, FileText, Figma, LinkIcon, Info, PieChart, Palette } from "lucide-react"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { PieChart, FileText, Palette } from "lucide-react"
 import { FrameAnalysisView } from "@/components/frame-analysis-view"
-import { SemanticTokenBadge } from "@/components/ui-helpers"
-import { extractThemes } from "@/lib/token-utils"
-import { ERROR_MESSAGES, APP_CONFIG } from "@/lib/constants"
-import type { AnalysisResult, Theme } from "@/lib/types"
-import { analyzeClientSide } from "@/lib/client-analyzer"
+import { SetupAnalysis } from "@/components/setup-analysis"
+import type { AnalysisResult } from "@/lib/types"
+import { getStatusColor, getTokenTypeColor, VISUALIZATION_COLORS } from "@/lib/color-constants"
 
 export default function DesignTokenAuditTool() {
-  const [tokensFile, setTokensFile] = useState<File | null>(null)
-  const [figmaUrl, setFigmaUrl] = useState("")
-  const [figmaToken, setFigmaToken] = useState("")
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [progress, setProgress] = useState(0)
   const [results, setResults] = useState<AnalysisResult | null>(null)
   const [error, setError] = useState("")
-  const [availableThemes, setAvailableThemes] = useState<Theme[]>([])
-  const [selectedTheme, setSelectedTheme] = useState<Theme | null>(null)
-  const [showThemeToggle, setShowThemeToggle] = useState(false)
-  const [useTheme, setUseTheme] = useState(false)
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-
-    if (!file || file.type !== "application/json") {
-      setError(ERROR_MESSAGES.INVALID_FILE_TYPE)
-      return
-    }
-
-    try {
-      const content = await file.text()
-
-      if (!content.trim()) {
-        setError(ERROR_MESSAGES.EMPTY_FILE)
-        return
-      }
-
-      const tokensData = JSON.parse(content)
-
-      if (!tokensData || typeof tokensData !== "object" || Array.isArray(tokensData)) {
-        setError(ERROR_MESSAGES.INVALID_FILE_FORMAT)
-        return
-      }
-
-      const extractedThemes = extractThemes(tokensData)
-
-      setTokensFile(file)
-      setAvailableThemes(extractedThemes)
-      setSelectedTheme(extractedThemes[0] || null)
-      setShowThemeToggle(extractedThemes.length > 0)
-      setUseTheme(false) // Reset theme toggle when new file is uploaded
-      setError("")
-    } catch (err) {
-      console.error("File parsing error:", err)
-      setError(ERROR_MESSAGES.INVALID_JSON)
-    }
-  }
-
-  const handleAnalysis = async () => {
-    if (!tokensFile || !figmaUrl || !figmaToken) {
-      setError(ERROR_MESSAGES.MISSING_FIELDS)
-      return
-    }
-
-    // Theme selection is optional - if no theme is selected, we'll use default resolution
-
-    setIsAnalyzing(true)
-    setProgress(0)
+  const handleAnalysisComplete = (analysisResults: AnalysisResult) => {
+    setResults(analysisResults)
     setError("")
-
-    try {
-      setProgress(20)
-      
-      // Use client-side analysis instead of API call
-      const analysisResults = await analyzeClientSide(
-        tokensFile,
-        figmaUrl,
-        figmaToken,
-        useTheme && selectedTheme ? selectedTheme : null
-      )
-
-      setProgress(100)
-      setResults(analysisResults)
-    } catch (err) {
-      console.error("Analysis error:", err)
-      setError(err instanceof Error ? err.message : ERROR_MESSAGES.ANALYSIS_FAILED)
-    } finally {
-      setIsAnalyzing(false)
-      setProgress(0)
-    }
   }
 
-  const handleThemeSelection = (theme: Theme | null) => {
-    setSelectedTheme(theme)
+  const handleAnalysisStart = () => {
+    setError("")
   }
 
-
+  const handleAnalysisError = (errorMessage: string) => {
+    setError(errorMessage)
+  }
 
   return (
     <div className="min-h-screen bg-gray-50/50">
@@ -116,23 +35,10 @@ export default function DesignTokenAuditTool() {
         <div className="grid grid-cols-4 gap-8">
           {/* Left Column - Setup and Design System (spans 1 column) */}
           <div className="col-span-1 space-y-8">
-            <SetupCard
-              tokensFile={tokensFile}
-              figmaUrl={figmaUrl}
-              figmaToken={figmaToken}
-              availableThemes={availableThemes}
-              selectedTheme={selectedTheme}
-              showThemeToggle={showThemeToggle}
-              useTheme={useTheme}
-              error={error}
-              isAnalyzing={isAnalyzing}
-              progress={progress}
-              onFileUpload={handleFileUpload}
-              onFigmaUrlChange={setFigmaUrl}
-              onFigmaTokenChange={setFigmaToken}
-              onThemeSelection={handleThemeSelection}
-              onUseThemeToggle={setUseTheme}
-              onAnalysis={handleAnalysis}
+            <SetupAnalysis
+              onAnalysisComplete={handleAnalysisComplete}
+              onAnalysisStart={handleAnalysisStart}
+              onAnalysisError={handleAnalysisError}
             />
             
             {results && (
@@ -248,34 +154,95 @@ function OverviewCard({ results }: { results: AnalysisResult }) {
         <div className="grid grid-cols-2 gap-6">
           {/* Left Column - Tokenization Overview */}
           <div className="text-center">
-            <div className="space-y-3">
-              {/* Main percentage */}
+            <div className="space-y-4">
+              {/* Main percentage with enhanced styling */}
               <div>
-                <div className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+                <div className="text-6xl font-bold bg-gradient-to-r from-green-600 to-green-700 bg-clip-text text-transparent mb-3">
                   {tokenizedPercentage}%
                 </div>
-                <div className="text-base text-gray-600">already tokenized</div>
+                <div className="text-lg text-gray-700 font-medium">already tokenized</div>
               </div>
               
-              {/* Percentage breakdown */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-center gap-2 text-xs">
-                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
-                  <span className="text-gray-600">{matchesPercentage}%</span>
-                  <span className="text-gray-400">can be tokenized</span>
+              {/* Visual progress breakdown */}
+              <div className="space-y-4">
+                {/* Can be tokenized */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-3 h-3 rounded-full shadow-sm"
+                        style={{ backgroundColor: VISUALIZATION_COLORS.STATUS.MATCHED.primary }}
+                      ></div>
+                      <span className="font-medium text-gray-700">Can be tokenized</span>
+                    </div>
+                    <span 
+                      className="font-bold"
+                      style={{ color: VISUALIZATION_COLORS.STATUS.MATCHED.dark }}
+                    >{matchesPercentage}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div 
+                      className="h-2.5 rounded-full transition-all duration-500 ease-out"
+                      style={{ 
+                        width: `${matchesPercentage}%`,
+                        background: `linear-gradient(to right, ${VISUALIZATION_COLORS.STATUS.MATCHED.primary}, ${VISUALIZATION_COLORS.STATUS.MATCHED.dark})`
+                      }}
+                    />
+                  </div>
                 </div>
-                <div className="flex items-center justify-center gap-2 text-xs">
-                  <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></div>
-                  <span className="text-gray-600">{unmatchesPercentage}%</span>
-                  <span className="text-gray-400">need attention</span>
+
+                {/* Need attention */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-3 h-3 rounded-full shadow-sm"
+                        style={{ backgroundColor: VISUALIZATION_COLORS.STATUS.NEEDS_ATTENTION.primary }}
+                      ></div>
+                      <span className="font-medium text-gray-700">Need attention</span>
+                    </div>
+                    <span 
+                      className="font-bold"
+                      style={{ color: VISUALIZATION_COLORS.STATUS.NEEDS_ATTENTION.dark }}
+                    >{unmatchesPercentage}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div 
+                      className="h-2.5 rounded-full transition-all duration-500 ease-out"
+                      style={{ 
+                        width: `${unmatchesPercentage}%`,
+                        background: `linear-gradient(to right, ${VISUALIZATION_COLORS.STATUS.NEEDS_ATTENTION.primary}, ${VISUALIZATION_COLORS.STATUS.NEEDS_ATTENTION.dark})`
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
-              
-              {/* Raw counts */}
-              <div className="flex justify-center gap-3 text-xs text-gray-500 pt-1 border-t border-gray-100">
-                <span>{tokenizedProperties} instances</span>
-                <span>{totalMatchedInstances} instances</span>
-                <span>{totalUnmatchedInstances} instances</span>
+
+              {/* Summary stats */}
+              <div className="pt-4 border-t border-gray-100">
+                <div className="grid grid-cols-3 gap-4 text-xs">
+                  <div className="text-center">
+                    <div 
+                      className="text-lg font-bold"
+                      style={{ color: VISUALIZATION_COLORS.STATUS.TOKENIZED.dark }}
+                    >{tokenizedProperties}</div>
+                    <div className="text-gray-500">Tokenized</div>
+                  </div>
+                  <div className="text-center">
+                    <div 
+                      className="text-lg font-bold"
+                      style={{ color: VISUALIZATION_COLORS.STATUS.MATCHED.dark }}
+                    >{totalMatchedInstances}</div>
+                    <div className="text-gray-500">Matched</div>
+                  </div>
+                  <div className="text-center">
+                    <div 
+                      className="text-lg font-bold"
+                      style={{ color: VISUALIZATION_COLORS.STATUS.NEEDS_ATTENTION.dark }}
+                    >{totalUnmatchedInstances}</div>
+                    <div className="text-gray-500">Issues</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -284,39 +251,67 @@ function OverviewCard({ results }: { results: AnalysisResult }) {
           <div>
             {allIssueCategories.length > 0 ? (
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-medium text-gray-700 uppercase tracking-wide">Issues by type</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-xs font-medium text-gray-600 uppercase tracking-wide">Issues by type</h3>
                   <span className="text-xs text-gray-400">
                     {results.figmaAnalysis.hardcodedValues.reduce((sum: number, item: any) => sum + item.count, 0)} total
                   </span>
                 </div>
                 
-                <div className="flex flex-wrap gap-1.5">
+                <div className="space-y-2">
                   {allIssueCategories.map(([category, count]) => {
-                    const categoryColors = {
-                      fill: { bg: 'bg-red-100', text: 'text-red-700', icon: '🎨' },
-                      stroke: { bg: 'bg-orange-100', text: 'text-orange-700', icon: '✏️' },
-                      spacing: { bg: 'bg-blue-100', text: 'text-blue-700', icon: '↔️' },
-                      padding: { bg: 'bg-purple-100', text: 'text-purple-700', icon: '📏' },
-                      typography: { bg: 'bg-green-100', text: 'text-green-700', icon: '📝' },
-                      'border-radius': { bg: 'bg-yellow-100', text: 'text-yellow-700', icon: '🔲' }
+                    const colors = getTokenTypeColor(category)
+                    const categoryIcons = {
+                      fill: '🎨',
+                      stroke: '✏️',
+                      spacing: '↔️',
+                      padding: '📏',
+                      typography: '📝',
+                      'border-radius': '🔲'
                     }
-                    const colors = categoryColors[category as keyof typeof categoryColors]
+                    const icon = categoryIcons[category as keyof typeof categoryIcons] || '❓'
                     
                     return (
-                      <div key={category} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${colors.bg} ${colors.text}`}>
-                        <span className="text-xs">{colors.icon}</span>
-                        <span className="capitalize">{category.replace('-', ' ')}</span>
-                        <span className="font-bold">{count}</span>
+                      <div 
+                        key={category} 
+                        className="flex items-center justify-between p-2.5 rounded-md border hover:bg-opacity-75 transition-colors duration-150"
+                        style={{ 
+                          backgroundColor: `${colors.light}80`,
+                          borderColor: colors.border
+                        }}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div 
+                            className="w-6 h-6 rounded-md bg-white border flex items-center justify-center text-xs"
+                            style={{ borderColor: colors.border }}
+                          >
+                            {icon}
+                          </div>
+                          <div>
+                            <div 
+                              className="text-sm font-medium capitalize"
+                              style={{ color: colors.text }}
+                            >
+                              {category.replace('-', ' ')}
+                            </div>
+                          </div>
+                        </div>
+                        <div 
+                          className="text-sm font-semibold"
+                          style={{ color: colors.text }}
+                        >
+                          {count}
+                        </div>
                       </div>
                     )
                   })}
                 </div>
               </div>
             ) : (
-              <div className="text-center text-gray-400 text-xs">
-                <div className="text-lg mb-1">🎉</div>
-                <div>All good!</div>
+              <div className="text-center text-gray-400 py-6">
+                <div className="text-3xl mb-2">🎉</div>
+                <div className="text-sm font-medium text-gray-500 mb-1">All good!</div>
+                <div className="text-xs">No issues found</div>
               </div>
             )}
           </div>
@@ -423,304 +418,6 @@ function EmptyAnalysisState() {
   )
 }
 
-interface SetupCardProps {
-  tokensFile: File | null
-  figmaUrl: string
-  figmaToken: string
-  availableThemes: Theme[]
-  selectedTheme: Theme | null
-  showThemeToggle: boolean
-  useTheme: boolean
-  error: string
-  isAnalyzing: boolean
-  progress: number
-  onFileUpload: (event: React.ChangeEvent<HTMLInputElement>) => void
-  onFigmaUrlChange: (url: string) => void
-  onFigmaTokenChange: (token: string) => void
-  onThemeSelection: (theme: Theme | null) => void
-  onUseThemeToggle: (useTheme: boolean) => void
-  onAnalysis: () => void
-}
-
-function SetupCard({
-  tokensFile,
-  figmaUrl,
-  figmaToken,
-  availableThemes,
-  selectedTheme,
-  showThemeToggle,
-  useTheme,
-  error,
-  isAnalyzing,
-  progress,
-  onFileUpload,
-  onFigmaUrlChange,
-  onFigmaTokenChange,
-  onThemeSelection,
-  onUseThemeToggle,
-  onAnalysis,
-}: SetupCardProps) {
-  return (
-    <Card className="border border-gray-200/60 shadow-lg bg-white/80 backdrop-blur-sm">
-      <CardHeader className="bg-gradient-to-r from-gray-50/80 to-gray-100/60 border-b border-gray-200/60 pb-4">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <div className="p-1.5 rounded-lg bg-blue-100">
-            <Upload className="w-4 h-4 text-blue-600" />
-          </div>
-          Setup Analysis
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-4 space-y-4">
-        <FileUploadSection tokensFile={tokensFile} onFileUpload={onFileUpload} />
-
-        {showThemeToggle && (
-          <ThemeSelectionSection
-            availableThemes={availableThemes}
-            selectedTheme={selectedTheme}
-            useTheme={useTheme}
-            onThemeSelection={onThemeSelection}
-            onUseThemeToggle={onUseThemeToggle}
-          />
-        )}
-
-        <FigmaInputSection
-          figmaUrl={figmaUrl}
-          figmaToken={figmaToken}
-          onFigmaUrlChange={onFigmaUrlChange}
-          onFigmaTokenChange={onFigmaTokenChange}
-        />
-
-        {error && <ErrorMessage error={error} />}
-
-        <AnalysisButton
-          isAnalyzing={isAnalyzing}
-          canAnalyze={!!(tokensFile && figmaUrl && figmaToken)}
-          onAnalysis={onAnalysis}
-        />
-
-        {isAnalyzing && <AnalysisProgress progress={progress} />}
-      </CardContent>
-    </Card>
-  )
-}
-
-function FileUploadSection({
-  tokensFile,
-  onFileUpload,
-}: { tokensFile: File | null; onFileUpload: (event: React.ChangeEvent<HTMLInputElement>) => void }) {
-  return (
-    <div className="space-y-2">
-      <div>
-        <Label htmlFor="tokens-file" className="text-sm font-medium text-gray-700">Design Tokens JSON File</Label>
-        <p className="text-xs text-gray-500 mt-1">Upload your design tokens file to match against Figma values</p>
-      </div>
-      <div className="relative">
-        <Input 
-          id="tokens-file" 
-          type="file" 
-          accept=".json" 
-          onChange={onFileUpload} 
-          className="mt-1 border-2 border-dashed border-gray-300 hover:border-gray-400 transition-colors text-xs" 
-        />
-      </div>
-      {tokensFile && (
-        <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-lg">
-          <CheckCircle className="w-3 h-3 text-green-600" />
-          <span className="text-xs text-green-700 font-medium">{tokensFile.name}</span>
-          <span className="text-xs text-green-600">uploaded</span>
-        </div>
-      )}
-    </div>
-  )
-}
-
-interface ThemeSelectionSectionProps {
-  availableThemes: Theme[]
-  selectedTheme: Theme | null
-  useTheme: boolean
-  onThemeSelection: (theme: Theme | null) => void
-  onUseThemeToggle: (useTheme: boolean) => void
-}
-
-function ThemeSelectionSection({
-  availableThemes,
-  selectedTheme,
-  useTheme,
-  onThemeSelection,
-  onUseThemeToggle,
-}: ThemeSelectionSectionProps) {
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div>
-          <Label className="text-sm font-medium text-gray-700">Use Theme</Label>
-          <p className="text-xs text-gray-500 mt-1">Enable to select a specific theme for token resolution</p>
-        </div>
-        <div className="flex items-center space-x-2">
-          <div className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-within:outline-none focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2">
-            <input
-              type="checkbox"
-              id="use-theme-toggle"
-              checked={useTheme}
-              onChange={(e) => onUseThemeToggle(e.target.checked)}
-              className="sr-only"
-            />
-            <label
-              htmlFor="use-theme-toggle"
-              className={`inline-flex h-6 w-11 cursor-pointer items-center rounded-full transition-colors ${
-                useTheme ? 'bg-blue-600' : 'bg-gray-200'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  useTheme ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </label>
-          </div>
-          <span className="text-xs text-gray-700">
-            {useTheme ? "On" : "Off"}
-          </span>
-        </div>
-      </div>
-      
-      {useTheme && (
-        <div className="space-y-2 max-h-32 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
-          <div className="space-y-1">
-            <ThemeCheckbox
-              theme={{ id: "none", name: "No Theme (Default)", selectedTokenSets: {} }}
-              isSelected={selectedTheme === null}
-              onSelection={() => onThemeSelection(null)}
-            />
-            {availableThemes.map((theme) => (
-              <ThemeCheckbox
-                key={theme.name}
-                theme={theme}
-                isSelected={selectedTheme?.name === theme.name}
-                onSelection={onThemeSelection}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 
 
-function ThemeCheckbox({
-  theme,
-  isSelected,
-  onSelection,
-}: { theme: Theme; isSelected: boolean; onSelection: (theme: Theme | null) => void }) {
-  return (
-    <div className="flex items-center gap-2">
-      <input
-        type="checkbox"
-        id={`theme-${theme.name}`}
-        checked={isSelected}
-        onChange={(e) => onSelection(theme)}
-        className="rounded"
-      />
-      <label htmlFor={`theme-${theme.name}`} className="text-xs">
-        {theme.name}
-      </label>
-    </div>
-  )
-}
-
-function FigmaInputSection({
-  figmaUrl,
-  figmaToken,
-  onFigmaUrlChange,
-  onFigmaTokenChange,
-}: {
-  figmaUrl: string
-  figmaToken: string
-  onFigmaUrlChange: (url: string) => void
-  onFigmaTokenChange: (token: string) => void
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <div>
-          <Label htmlFor="figma-url" className="text-sm font-medium text-gray-700">Figma File URL</Label>
-          <p className="text-xs text-gray-500 mt-1">The URL of the Figma file you want to analyze</p>
-        </div>
-        <Input
-          id="figma-url"
-          type="url"
-          placeholder="https://www.figma.com/file/..."
-          value={figmaUrl}
-          onChange={(e) => onFigmaUrlChange(e.target.value)}
-          className="mt-1 text-xs"
-        />
-      </div>
-      <div className="space-y-2">
-        <div>
-          <Label htmlFor="figma-token" className="text-sm font-medium text-gray-700">Figma Personal Access Token</Label>
-          <p className="text-xs text-gray-500 mt-1">Required to access the Figma file</p>
-        </div>
-        <Input
-          id="figma-token"
-          type="password"
-          placeholder="figd_..."
-          value={figmaToken}
-          onChange={(e) => onFigmaTokenChange(e.target.value)}
-          className="mt-1 text-xs"
-        />
-      </div>
-    </div>
-  )
-}
-
-function ErrorMessage({ error }: { error: string }) {
-  return (
-    <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-      <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
-      <p className="text-xs text-red-700 font-medium">{error}</p>
-    </div>
-  )
-}
-
-function AnalysisButton({
-  isAnalyzing,
-  canAnalyze,
-  onAnalysis,
-}: { isAnalyzing: boolean; canAnalyze: boolean; onAnalysis: () => void }) {
-  return (
-    <Button 
-      onClick={onAnalysis} 
-      disabled={isAnalyzing || !canAnalyze} 
-      className="w-full h-10 text-sm font-medium bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      {isAnalyzing ? (
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          Analyzing...
-        </div>
-      ) : (
-        "Start Analysis"
-      )}
-    </Button>
-  )
-}
-
-function AnalysisProgress({ progress }: { progress: number }) {
-  return (
-    <div className="space-y-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-      <div className="space-y-2">
-        <div className="flex justify-between text-xs">
-          <span className="text-blue-700 font-medium">Analysis Progress</span>
-          <span className="text-blue-600">{progress}%</span>
-        </div>
-        <Progress value={progress} className="w-full h-2" />
-      </div>
-      <p className="text-xs text-blue-700 text-center">
-        Analyzing Figma file and matching tokens...
-      </p>
-    </div>
-  )
-}

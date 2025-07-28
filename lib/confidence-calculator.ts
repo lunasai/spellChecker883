@@ -1,6 +1,6 @@
 import { APP_CONFIG } from "./constants"
 import { normalizeColor } from "./color-utils"
-import { calculateStringSimilarity } from "./string-utils"
+import { calculateStringSimilarity } from "./utils"
 import { extractCleanTokenName } from "./token-utils"
 
 // Unified confidence calculation with clear, consistent rules
