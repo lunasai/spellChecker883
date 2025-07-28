@@ -147,7 +147,8 @@ function findAllPotentialMatches(hardcodedValue: HardcodedValueForMatching, toke
     const bNameAlignment = calculatePropertyTokenNameAlignment(b.tokenName, hardcodedValue.type)
     
     // Primary: Semantic name alignment (highest first)
-    if (Math.abs(aNameAlignment - bNameAlignment) > 0.1) {
+    // Reduced threshold from 0.1 to 0.05 to catch smaller but meaningful differences
+    if (Math.abs(aNameAlignment - bNameAlignment) > 0.05) {
       return bNameAlignment - aNameAlignment
     }
     
