@@ -196,28 +196,28 @@ function AppHeader() {
 
 function OverviewCard({ results }: { results: AnalysisResult }) {
   // Calculate the correct metrics based on your requirements
-  const tokenizedValues = results.figmaAnalysis.tokenizedElements || 0
+  const tokenizedProperties = results.figmaAnalysis.tokenizedProperties || 0
   
-  // Calculate total instances that can be tokenized by looking at the original nonTokenizedValues
+  // Calculate total instances that can be tokenized by looking at the original hardcodedValues
   // and checking which ones have matches
-  const totalMatchedInstances = results.figmaAnalysis.nonTokenizedValues.reduce((sum, nonTokenizedValue) => {
+  const totalMatchedInstances = results.figmaAnalysis.hardcodedValues.reduce((sum, hardcodedValue) => {
     // Check if this value has a match in tokenMatches
-    const hasMatch = results.tokenMatches.some(match => match.figmaValue === nonTokenizedValue.value)
-    return sum + (hasMatch ? nonTokenizedValue.count : 0)
+    const hasMatch = results.tokenMatches.some(match => match.figmaValue === hardcodedValue.value)
+    return sum + (hasMatch ? hardcodedValue.count : 0)
   }, 0)
   
   // Calculate total instances that need attention (unmatched with count)
   const totalUnmatchedInstances = results.unmatchedValues.reduce((sum, unmatched) => sum + unmatched.count, 0)
   
   // Total instances analyzed
-  const totalAnalyzed = tokenizedValues + totalMatchedInstances + totalUnmatchedInstances
+  const totalAnalyzed = tokenizedProperties + totalMatchedInstances + totalUnmatchedInstances
   
   // Calculate percentages
-  const tokenizedPercentage = totalAnalyzed > 0 ? Math.round((tokenizedValues / totalAnalyzed) * 100) : 0
+  const tokenizedPercentage = totalAnalyzed > 0 ? Math.round((tokenizedProperties / totalAnalyzed) * 100) : 0
   const matchesPercentage = totalAnalyzed > 0 ? Math.round((totalMatchedInstances / totalAnalyzed) * 100) : 0
   const unmatchesPercentage = totalAnalyzed > 0 ? Math.round((totalUnmatchedInstances / totalAnalyzed) * 100) : 0
 
-  // Calculate issue categories from all non-tokenized values
+  // Calculate issue categories from all hardcoded values
   const issueCategories = {
     fill: 0,
     stroke: 0,
@@ -227,8 +227,8 @@ function OverviewCard({ results }: { results: AnalysisResult }) {
     'border-radius': 0
   }
 
-  // Count all non-tokenized values by type
-  results.figmaAnalysis.nonTokenizedValues.forEach(item => {
+  // Count all hardcoded values by type
+  results.figmaAnalysis.hardcodedValues.forEach(item => {
     if (issueCategories.hasOwnProperty(item.type)) {
       issueCategories[item.type as keyof typeof issueCategories] += item.count
     }
@@ -273,7 +273,7 @@ function OverviewCard({ results }: { results: AnalysisResult }) {
               
               {/* Raw counts */}
               <div className="flex justify-center gap-3 text-xs text-gray-500 pt-1 border-t border-gray-100">
-                <span>{tokenizedValues} instances</span>
+                <span>{tokenizedProperties} instances</span>
                 <span>{totalMatchedInstances} instances</span>
                 <span>{totalUnmatchedInstances} instances</span>
               </div>
@@ -287,7 +287,7 @@ function OverviewCard({ results }: { results: AnalysisResult }) {
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-xs font-medium text-gray-700 uppercase tracking-wide">Issues by type</h3>
                   <span className="text-xs text-gray-400">
-                    {results.figmaAnalysis.nonTokenizedValues.reduce((sum, item) => sum + item.count, 0)} total
+                    {results.figmaAnalysis.hardcodedValues.reduce((sum: number, item: any) => sum + item.count, 0)} total
                   </span>
                 </div>
                 

@@ -53,27 +53,42 @@ interface FrameCardProps {
 
 function FrameCard({ frame }: FrameCardProps) {
   const tokenizationPercentage = Math.round(frame.tokenizationRate)
+  const [isCollapsed, setIsCollapsed] = useState(false)
 
   return (
     <Card className="overflow-hidden border border-gray-200/60 shadow-lg bg-white/80 backdrop-blur-sm">
-      <FrameCardHeader frame={frame} tokenizationPercentage={tokenizationPercentage} />
-      <CardContent className="p-0">
-        {frame.rawValues.length === 0 ? (
-          <EmptyFrameContent />
-        ) : (
-          <FrameValuesList frame={frame} />
-        )}
-      </CardContent>
+      <FrameCardHeader 
+        frame={frame} 
+        tokenizationPercentage={tokenizationPercentage} 
+        isCollapsed={isCollapsed}
+        onToggleCollapse={() => setIsCollapsed(!isCollapsed)}
+      />
+      {!isCollapsed && (
+        <CardContent className="p-0">
+          {frame.rawValues.length === 0 ? (
+            <EmptyFrameContent />
+          ) : (
+            <FrameValuesList frame={frame} />
+          )}
+        </CardContent>
+      )}
     </Card>
   )
 }
 
-function FrameCardHeader({ frame, tokenizationPercentage }: { 
+function FrameCardHeader({ 
+  frame, 
+  tokenizationPercentage, 
+  isCollapsed, 
+  onToggleCollapse 
+}: { 
   frame: FrameAnalysis
   tokenizationPercentage: number
+  isCollapsed: boolean
+  onToggleCollapse: () => void
 }) {
   // Calculate the breakdown for this frame (similar to overview)
-  const tokenizedValues = frame.tokenizedElements || 0
+  const tokenizedProperties = frame.tokenizedProperties || 0
   const frameMatches = frame.rawValues.reduce((total, valueData) => {
     return total + (valueData.recommendations && valueData.recommendations.length > 0 ? valueData.count : 0)
   }, 0)
@@ -81,10 +96,10 @@ function FrameCardHeader({ frame, tokenizationPercentage }: {
     return total + (valueData.recommendations && valueData.recommendations.length > 0 ? 0 : valueData.count)
   }, 0)
   
-  const totalAnalyzed = tokenizedValues + frameMatches + frameIssues
+  const totalAnalyzed = tokenizedProperties + frameMatches + frameIssues
   
   // Calculate percentages
-  const tokenizedPercentage = totalAnalyzed > 0 ? Math.round((tokenizedValues / totalAnalyzed) * 100) : 0
+  const tokenizedPercentage = totalAnalyzed > 0 ? Math.round((tokenizedProperties / totalAnalyzed) * 100) : 0
   const matchesPercentage = totalAnalyzed > 0 ? Math.round((frameMatches / totalAnalyzed) * 100) : 0
   const issuesPercentage = totalAnalyzed > 0 ? Math.round((frameIssues / totalAnalyzed) * 100) : 0
   
@@ -93,14 +108,17 @@ function FrameCardHeader({ frame, tokenizationPercentage }: {
   const hasMatches = frameMatches > 0
 
   return (
-    <CardHeader className="bg-gradient-to-r from-gray-50/80 to-gray-100/60 border-b border-gray-200/60">
+    <CardHeader 
+      className="bg-gradient-to-r from-gray-50/80 to-gray-100/60 border-b border-gray-200/60 cursor-pointer hover:bg-gray-100/80 transition-colors"
+      onClick={onToggleCollapse}
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <div className={`p-2 rounded-lg ${!frameHasIssues ? 'bg-green-100 text-green-600' : hasMatches ? 'bg-blue-100 text-blue-600' : 'bg-yellow-100 text-yellow-600'}`}>
               {!frameHasIssues ? <CheckCircle2 className="w-5 h-5" /> : hasMatches ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
             </div>
-          <div>
+            <div>
               <CardTitle className="text-lg font-semibold text-gray-900">{frame.frameName}</CardTitle>
               <p className="text-sm text-gray-600 mt-1 flex items-center gap-1">
                 <MapPin className="w-3 h-3" />
@@ -141,12 +159,19 @@ function FrameCardHeader({ frame, tokenizationPercentage }: {
               <span className="text-xs font-medium text-gray-600">• {tokenizedPercentage + matchesPercentage}%</span>
             </div>
           </div>
-          <Button variant="outline" size="sm" asChild className="flex items-center gap-2 bg-white hover:bg-gray-50">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            asChild 
+            className="flex items-center gap-2 bg-white hover:bg-gray-50"
+            onClick={(e) => e.stopPropagation()}
+          >
             <a href={frame.figmaUrl} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="w-4 h-4" />
               Open Frame
             </a>
           </Button>
+          <ChevronDown className={`w-4 h-4 transition-transform ${isCollapsed ? '' : 'rotate-180'}`} />
         </div>
       </div>
     </CardHeader>
@@ -182,22 +207,31 @@ function FrameValuesList({ frame }: { frame: FrameAnalysis }) {
 function ValueTypeSection({ type, typeValues, frame }: { type: string; typeValues: any[]; frame: FrameAnalysis }) {
   // Calculate total occurrences for this property type in this frame
   const totalTypeIssues = typeValues.reduce((sum, valueData) => sum + valueData.count, 0)
+  const [isCollapsed, setIsCollapsed] = useState(false)
 
   return (
     <div className="p-6">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="p-2 rounded-lg bg-gray-100">
-          {getTypeIcon(type)}
+      <div 
+        className="flex items-center justify-between mb-4 cursor-pointer hover:bg-gray-50/60 p-2 rounded-lg transition-colors"
+        onClick={() => setIsCollapsed(!isCollapsed)}
+      >
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-gray-100">
+            {getTypeIcon(type)}
+          </div>
+          <div>
+            <h4 className="text-sm font-semibold text-gray-900 capitalize">{type} • {totalTypeIssues} Issues</h4>
+          </div>
         </div>
-        <div>
-          <h4 className="text-sm font-semibold text-gray-900 capitalize">{type} • {totalTypeIssues} Issues</h4>
+        <ChevronDown className={`w-4 h-4 transition-transform ${isCollapsed ? '' : 'rotate-180'}`} />
+      </div>
+      {!isCollapsed && (
+        <div className="space-y-4">
+          {typeValues.map((valueData, index) => (
+            <ValueMatchCard key={index} valueData={valueData} type={type} frame={frame} />
+          ))}
         </div>
-      </div>
-      <div className="space-y-4">
-        {typeValues.map((valueData, index) => (
-          <ValueMatchCard key={index} valueData={valueData} type={type} frame={frame} />
-        ))}
-      </div>
+      )}
     </div>
   )
 }
@@ -256,13 +290,18 @@ function ValueToMatchRelationship({
 }) {
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4">
-        <FigmaValueDisplay value={value} type={type} />
-        <ArrowRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
-        <TokenMatchDisplay 
-          hasRecommendations={hasRecommendations} 
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-4 flex-1 min-w-0">
+          <FigmaValueDisplay value={value} type={type} />
+          <ArrowRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          <TokenInfoDisplay 
+            hasRecommendations={hasRecommendations} 
+            primaryRecommendation={primaryRecommendation} 
+          />
+        </div>
+        <TokenBadgesDisplay 
+          hasRecommendations={hasRecommendations}
           primaryRecommendation={primaryRecommendation} 
-          count={count} 
           alternatives={alternatives} 
         />
       </div>
@@ -316,6 +355,36 @@ function TokenMatchDisplay({
   return <MatchedTokenDisplay recommendation={primaryRecommendation} count={count} alternatives={alternatives} />
 }
 
+function TokenInfoDisplay({
+  hasRecommendations,
+  primaryRecommendation,
+}: {
+  hasRecommendations: boolean
+  primaryRecommendation?: any
+}) {
+  if (!hasRecommendations) {
+    return <UnmatchedTokenDisplay count={0} />
+  }
+
+  return <TokenInfo recommendation={primaryRecommendation} />
+}
+
+function TokenBadgesDisplay({
+  hasRecommendations,
+  primaryRecommendation,
+  alternatives,
+}: {
+  hasRecommendations: boolean
+  primaryRecommendation?: any
+  alternatives?: any[]
+}) {
+  if (!hasRecommendations) {
+    return null
+  }
+
+  return <TokenBadges recommendation={primaryRecommendation} count={0} alternatives={alternatives} />
+}
+
 function MatchedTokenDisplay({ recommendation, count, alternatives }: { recommendation: any; count: number; alternatives?: any[] }) {
   return (
     <div className="flex-1 min-w-0">
@@ -334,8 +403,10 @@ function TokenInfo({ recommendation }: { recommendation: any }) {
       >
         {recommendation.tokenName}
       </div>
-      {recommendation.isSemanticToken && recommendation.originalReference && (
+      {recommendation.isSemanticToken && recommendation.originalReference ? (
         <div className="text-xs text-blue-600 mt-1">Reference: {recommendation.originalReference} • {recommendation.tokenValue}</div>
+      ) : (
+        <div className="text-xs text-blue-600 mt-1">{recommendation.tokenValue}</div>
       )}
     </div>
   )
@@ -364,7 +435,7 @@ function TokenBadges({ recommendation, count, alternatives }: { recommendation: 
   }, [showAlternatives])
   
   return (
-    <div className="flex items-center gap-2 mt-2">
+    <div className="flex items-center gap-2">
       <Badge 
         variant={matchPercentage === 100 ? "default" : "secondary"} 
         className={`text-xs ${matchPercentage === 100 ? 'bg-green-100 text-green-800 border-green-200' : 'bg-blue-100 text-blue-800 border-blue-200'}`}
@@ -391,9 +462,13 @@ function TokenBadges({ recommendation, count, alternatives }: { recommendation: 
                       <div className="font-medium text-gray-900 truncate" title={alternative.fullTokenPath}>
                         {alternative.tokenName}
                       </div>
-                      {alternative.isSemanticToken && alternative.originalReference && (
+                      {alternative.isSemanticToken && alternative.originalReference ? (
                         <div className="text-blue-600 text-xs">
                           {alternative.originalReference} • {alternative.tokenValue}
+                        </div>
+                      ) : (
+                        <div className="text-blue-600 text-xs">
+                          {alternative.tokenValue}
                         </div>
                       )}
                     </div>
@@ -410,9 +485,6 @@ function TokenBadges({ recommendation, count, alternatives }: { recommendation: 
           )}
         </div>
       )}
-      <Badge variant="outline" className="text-xs bg-gray-100 text-gray-600">
-        {count} occurrence{count !== 1 ? 's' : ''}
-      </Badge>
     </div>
   )
 }

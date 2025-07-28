@@ -87,7 +87,7 @@ export interface ValueLocation {
   componentName?: string
 }
 
-export interface ValueOccurrence {
+export interface HardcodedValue {
   type: "fill" | "stroke" | "spacing" | "padding" | "typography" | "border-radius"
   value: string
   locations: ValueLocation[]
@@ -121,7 +121,7 @@ export interface FrameInfo {
 
 export interface AnalysisResult {
   figmaAnalysis: {
-    nonTokenizedValues: Array<{
+    hardcodedValues: Array<{
       type: "fill" | "stroke" | "spacing" | "padding" | "typography" | "border-radius"
       value: string
       count: number
@@ -129,7 +129,7 @@ export interface AnalysisResult {
       nodeIds?: string[]
     }>
     totalElements: number
-    tokenizedElements?: number
+    tokenizedProperties?: number
     frameAnalyses?: FrameAnalysis[]
   }
   tokenMatches: TokenMatch[]
@@ -170,7 +170,7 @@ export interface FrameAnalysis {
     }>
   }>
   totalElements: number
-  tokenizedElements?: number
+  tokenizedProperties?: number
   tokenizationRate: number
   totalIssues?: number
 }

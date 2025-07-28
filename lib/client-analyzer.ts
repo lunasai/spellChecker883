@@ -4,7 +4,7 @@ import { resolveTokensWithSemantics, resolveTokensWithTheme } from "@/lib/token-
 import { analyzeFigmaFileByFrames } from "@/lib/figma-analyzer"
 import { matchValuesWithTokens } from "@/lib/token-matcher"
 import type { DesignToken, Theme } from "@/lib/types"
-import { fetchFigmaTextStyles } from '@/lib/figma-analyzer'
+import { fetchFigmaStyles } from '@/lib/figma-analyzer'
 
 export async function analyzeClientSide(
   tokensFile: File,
@@ -50,15 +50,15 @@ export async function analyzeClientSide(
     console.log("Fetching Figma file...")
     const figmaData = await fetchFigmaFile(figmaUrl, figmaToken)
 
-    // Fetch Figma text styles for variable detection in styles
+    // Fetch Figma styles for variable detection
     const fileId = extractFileIdFromUrl(figmaUrl)
     let styleIdToStyle = {}
     if (fileId) {
       try {
-        styleIdToStyle = await fetchFigmaTextStyles(fileId, figmaToken)
-        console.log("Fetched Figma text styles for variable detection.")
+        styleIdToStyle = await fetchFigmaStyles(fileId, figmaToken)
+        console.log("Fetched Figma styles for variable detection.")
       } catch (err) {
-        console.warn("Failed to fetch Figma text styles:", err)
+        console.warn("Failed to fetch Figma styles:", err)
       }
     }
 
@@ -67,12 +67,12 @@ export async function analyzeClientSide(
 
     console.log("Figma analysis complete:")
     console.log("- Total elements:", analysisResult.totalElements)
-    console.log("- Non-tokenized values:", analysisResult.nonTokenizedValues.length)
+    console.log("- Hardcoded values:", analysisResult.hardcodedValues.length)
     console.log("- Frame analyses:", analysisResult.frameAnalyses.length)
 
     // Match values with tokens using enhanced matching logic
     console.log("Matching values with tokens...")
-    const matchResult = matchValuesWithTokens(analysisResult.nonTokenizedValues, resolvedTokens)
+    const matchResult = matchValuesWithTokens(analysisResult.hardcodedValues, resolvedTokens)
 
     console.log("Matching complete:")
     console.log("- Token matches:", matchResult.tokenMatches.length)
@@ -80,9 +80,9 @@ export async function analyzeClientSide(
 
     return {
       figmaAnalysis: {
-        nonTokenizedValues: analysisResult.nonTokenizedValues,
+        hardcodedValues: analysisResult.hardcodedValues,
         totalElements: analysisResult.totalElements,
-        tokenizedElements: analysisResult.tokenizedElements,
+        tokenizedProperties: analysisResult.tokenizedProperties,
         frameAnalyses: analysisResult.frameAnalyses,
       },
       tokenMatches: matchResult.tokenMatches,
