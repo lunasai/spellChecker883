@@ -1,9 +1,9 @@
 import { APP_CONFIG } from "./constants"
-import { calculateMatchConfidence } from "./confidence-calculator"
+import { calculateMatchConfidence, calculatePropertyTokenNameAlignment } from "./confidence-calculator"
 import { extractCleanTokenName } from "./token-utils"
 import type { ResolvedToken, TokenMatch, UnmatchedValue } from "./types"
 
-interface FigmaValue {
+interface HardcodedValueForMatching {
   type: string
   value: string
   count: number
@@ -32,9 +32,9 @@ interface EnhancedTokenMatch {
   }>
 }
 
-export function matchValuesWithTokens(figmaValues: FigmaValue[], tokens: Record<string, ResolvedToken>): MatchResult {
+export function matchValuesWithTokens(hardcodedValues: HardcodedValueForMatching[], tokens: Record<string, ResolvedToken>): MatchResult {
   console.log("Starting token matching...")
-  console.log(`Figma values to match: ${figmaValues.length}`)
+  console.log(`Hardcoded values to match: ${hardcodedValues.length}`)
   console.log(`Available resolved tokens: ${Object.keys(tokens).length}`)
 
   // Debug: Show some resolved token examples
@@ -58,19 +58,19 @@ export function matchValuesWithTokens(figmaValues: FigmaValue[], tokens: Record<
   const enhancedMatches: EnhancedTokenMatch[] = []
   const unmatchedValues: UnmatchedValue[] = []
 
-  figmaValues.forEach((figmaValue) => {
-    const allMatches = findAllPotentialMatches(figmaValue, tokens)
+  hardcodedValues.forEach((hardcodedValue) => {
+    const allMatches = findAllPotentialMatches(hardcodedValue, tokens)
 
     if (allMatches.length > 0) {
-      console.log(`Found ${allMatches.length} matches for ${figmaValue.value}:`)
+      console.log(`Found ${allMatches.length} matches for ${hardcodedValue.value}:`)
       allMatches.slice(0, 3).forEach((match) => {
         console.log(`  ${match.tokenName} (${match.matchType}): ${match.confidence.toFixed(2)}`)
       })
 
       enhancedMatches.push({
-        figmaValue: figmaValue.value,
-        nodeIds: figmaValue.nodeIds,
-        count: figmaValue.count,
+        figmaValue: hardcodedValue.value,
+        nodeIds: hardcodedValue.nodeIds,
+        count: hardcodedValue.count,
         matches: allMatches.map(match => ({
           tokenName: match.tokenName,
           tokenValue: match.tokenData.value,
@@ -83,11 +83,11 @@ export function matchValuesWithTokens(figmaValues: FigmaValue[], tokens: Record<
         })),
       })
     } else {
-      console.log(`No matches found for ${figmaValue.value} (${figmaValue.type})`)
+      console.log(`No matches found for ${hardcodedValue.value} (${hardcodedValue.type})`)
       unmatchedValues.push({
-        value: figmaValue.value,
-        type: figmaValue.type,
-        count: figmaValue.count,
+        value: hardcodedValue.value,
+        type: hardcodedValue.type,
+        count: hardcodedValue.count,
       })
     }
   })
@@ -111,11 +111,8 @@ interface PotentialMatch {
   matchType: "exact" | "semantic" | "similar" | "base"
 }
 
-function findAllPotentialMatches(figmaValue: FigmaValue, tokens: Record<string, ResolvedToken>): PotentialMatch[] {
-  const exactMatches: PotentialMatch[] = []
-  const semanticMatches: PotentialMatch[] = []
-  const similarMatches: PotentialMatch[] = []
-  const baseMatches: PotentialMatch[] = []
+function findAllPotentialMatches(hardcodedValue: HardcodedValueForMatching, tokens: Record<string, ResolvedToken>): PotentialMatch[] {
+  const allMatches: PotentialMatch[] = []
 
   for (const [tokenName, tokenData] of Object.entries(tokens)) {
     // Skip tokens that don't have a resolved value
@@ -124,105 +121,91 @@ function findAllPotentialMatches(figmaValue: FigmaValue, tokens: Record<string, 
     }
 
     const confidence = calculateMatchConfidence(
-      figmaValue.value,
+      hardcodedValue.value,
       tokenData.value,
-      figmaValue.type,
+      hardcodedValue.type,
       tokenData.isReference,
       tokenName,
-    )
+    );
 
-    if (confidence === 0) continue
+    if (confidence === 0) continue;
 
     const match: PotentialMatch = {
       tokenName,
       tokenData,
       confidence,
-      matchType: determineMatchType(figmaValue.value, tokenData, confidence),
-    }
+      matchType: determineMatchType(confidence, tokenData.isReference),
+    };
 
-    // Enhanced categorization with better semantic token prioritization
-    if (confidence >= 0.98) {
-      // For exact matches, prioritize semantic tokens
-      if (tokenData.isReference) {
-        exactMatches.unshift(match) // Add semantic tokens to the front
-      } else {
-        exactMatches.push(match) // Add base tokens to the back
-      }
-    } else if (tokenData.isReference && confidence >= APP_CONFIG.CONFIDENCE_THRESHOLDS.MEDIUM) {
-      semanticMatches.push(match)
-    } else if (confidence >= APP_CONFIG.CONFIDENCE_THRESHOLDS.HIGH) {
-      similarMatches.push(match)
-    } else if (confidence >= APP_CONFIG.CONFIDENCE_THRESHOLDS.LOW) {
-      baseMatches.push(match)
-    }
+    allMatches.push(match);
   }
 
-  // Enhanced comparison function for sorting with better semantic token priority
-  const compareMatches = (a: PotentialMatch, b: PotentialMatch) => {
-    // First by confidence
-    if (Math.abs(a.confidence - b.confidence) > 0.01) {
+  // Sort matches by semantic alignment, then exact value matches, then confidence, then semantic preference
+  allMatches.sort((a, b) => {
+    // Calculate semantic name alignment scores
+    const aNameAlignment = calculatePropertyTokenNameAlignment(a.tokenName, hardcodedValue.type)
+    const bNameAlignment = calculatePropertyTokenNameAlignment(b.tokenName, hardcodedValue.type)
+    
+    // Primary: Semantic name alignment (highest first)
+    if (Math.abs(aNameAlignment - bNameAlignment) > 0.1) {
+      return bNameAlignment - aNameAlignment
+    }
+    
+    // Secondary: Exact value matches over similar value matches (when semantic alignment is similar)
+    const aIsExactValueMatch = a.tokenData.value === hardcodedValue.value
+    const bIsExactValueMatch = b.tokenData.value === hardcodedValue.value
+    
+    if (aIsExactValueMatch && !bIsExactValueMatch) {
+      return -1 // a wins (exact match)
+    }
+    if (!aIsExactValueMatch && bIsExactValueMatch) {
+      return 1 // b wins (exact match)
+    }
+    
+    // Tertiary: confidence (highest first) - but only if semantic alignment and exact match status are similar
+    if (Math.abs(a.confidence - b.confidence) > 0.05) {
       return b.confidence - a.confidence
     }
     
-    // Then prefer semantic tokens with enhanced logic
+    // Quaternary: prefer semantic tokens over base tokens
     if (a.tokenData.isReference && !b.tokenData.isReference) return -1
     if (!a.tokenData.isReference && b.tokenData.isReference) return 1
     
-    // If both are semantic or both are base, apply additional criteria
-    if (a.tokenData.isReference === b.tokenData.isReference) {
-      // For spacing tokens, prefer semantic naming patterns over numeric
-      if (a.tokenName.includes('spacing') || b.tokenName.includes('spacing')) {
-        const aIsNumeric = /^\d+$/.test(a.tokenName.split('.').pop() || '')
-        const bIsNumeric = /^\d+$/.test(b.tokenName.split('.').pop() || '')
-        
-        if (aIsNumeric && !bIsNumeric) return 1  // Prefer non-numeric
-        if (!aIsNumeric && bIsNumeric) return -1 // Prefer non-numeric
-      }
-      
-      // Prefer shorter, more semantic token names
-      const aSemanticScore = calculateSemanticNameScore(a.tokenName)
-      const bSemanticScore = calculateSemanticNameScore(b.tokenName)
-      
-      if (aSemanticScore !== bSemanticScore) {
-        return bSemanticScore - aSemanticScore
-      }
+    // Quinary: prefer shorter, more semantic token names
+    const aSemanticScore = calculateSemanticNameScore(a.tokenName)
+    const bSemanticScore = calculateSemanticNameScore(b.tokenName)
+    if (aSemanticScore !== bSemanticScore) {
+      return bSemanticScore - aSemanticScore
     }
     
-    // Finally by name for consistency
+    // Final: alphabetical for consistency
     return a.tokenName.localeCompare(b.tokenName)
-  }
+  })
 
-  // Sort each category using the comparison function
-  exactMatches.sort(compareMatches)
-  semanticMatches.sort(compareMatches)
-  similarMatches.sort(compareMatches)
-  baseMatches.sort(compareMatches)
-
-  // Combine matches in priority order with limits
-  const allMatches = [
-    ...exactMatches.slice(0, 6), // Top 6 exact matches (semantic first)
-    ...semanticMatches.slice(0, 4), // Top 4 semantic matches
-    ...similarMatches.slice(0, 3), // Top 3 similar matches
-    ...baseMatches.slice(0, 2), // Top 2 base matches as fallback
-  ]
-
-  return allMatches.slice(0, 10) // Overall limit to top 10 matches
+  // Return top matches with reasonable limits
+  return allMatches.slice(0, 8);
 }
 
-function determineMatchType(
-  figmaValue: string,
-  tokenData: ResolvedToken,
-  confidence: number,
-): "exact" | "semantic" | "similar" | "base" {
-  if (confidence >= 0.98) {
-    return tokenData.isReference ? "exact" : "exact" // Both can be exact, but semantic gets priority in sorting
+function determineMatchType(confidence: number, isSemanticToken: boolean): "exact" | "semantic" | "similar" | "base" {
+  // Updated thresholds based on the new four-category scoring system
+  
+  // Exact matches: Category 1 (0.95-1.0)
+  if (confidence >= 0.95) {
+    return "exact";
   }
-
-  if (tokenData.isReference) {
-    return confidence >= APP_CONFIG.CONFIDENCE_THRESHOLDS.HIGH ? "semantic" : "similar"
+  
+  // Semantic matches: Category 2 (0.8-0.94) for semantic tokens with naming match + similar value
+  if (confidence >= 0.8 && isSemanticToken) {
+    return "semantic";
   }
-
-  return "base"
+  
+  // Similar matches: Category 3 (0.7-0.89) for exact value matches without naming match, or Category 4 (0.4-0.69) for similar value matches
+  if (confidence >= 0.7) {
+    return "similar";
+  }
+  
+  // Base matches: Everything else (0.0-0.69)
+  return "base";
 }
 
 function convertToTokenMatches(enhancedMatches: EnhancedTokenMatch[]): TokenMatch[] {
@@ -310,20 +293,41 @@ function calculateSemanticNameScore(tokenName: string): number {
   const normalizedName = tokenName.toLowerCase()
   let score = 0
   
-  // Boost for semantic patterns
-  if (normalizedName.includes('space.')) score += 3
-  if (normalizedName.includes('spacing.')) score += 2
-  if (normalizedName.includes('margin.')) score += 2
-  if (normalizedName.includes('padding.')) score += 2
+  // Boost for semantic patterns by property type
+  if (normalizedName.includes('space.') || normalizedName.includes('spacing.')) score += 4
+  if (normalizedName.includes('radius.') || normalizedName.includes('radii.')) score += 4
+  if (normalizedName.includes('padding.') || normalizedName.includes('pad.')) score += 4
+  if (normalizedName.includes('margin.')) score += 4
+  if (normalizedName.includes('font.') || normalizedName.includes('typography.')) score += 4
+  if (normalizedName.includes('color.') || normalizedName.includes('colour.')) score += 4
+  if (normalizedName.includes('border.')) score += 4
+  if (normalizedName.includes('stroke.')) score += 4
   
-  // Boost for size qualifiers
-  if (normalizedName.match(/\.(xs|sm|md|lg|xl|xxs|xxl)$/)) score += 2
+  // Boost for semantic size qualifiers
+  if (normalizedName.match(/\.(xs|sm|md|lg|xl|xxs|xxl|2xl|3xl|4xl|5xl)$/)) score += 3
+  
+  // Boost for semantic numeric patterns
+  if (normalizedName.match(/\.(100|200|300|400|500|600|700|800|900)$/)) score += 2
+  
+  // Boost for semantic naming patterns
+  if (normalizedName.includes('semantic.')) score += 3
+  if (normalizedName.includes('component.')) score += 2
+  if (normalizedName.includes('ui.')) score += 2
+  
+  // Penalize base/core/foundation tokens (should be deprioritized)
+  if (normalizedName.includes('base.') || normalizedName.includes('core.') || 
+      normalizedName.includes('foundation.') || normalizedName.includes('primitive.')) {
+    score -= 5
+  }
   
   // Penalize numeric-only tokens
-  if (normalizedName.match(/^\d+$/) || normalizedName.match(/\.\d+$/)) score -= 1
+  if (normalizedName.match(/^\d+$/) || normalizedName.match(/\.\d+$/)) score -= 3
+  
+  // Penalize very long token names (less semantic)
+  if (tokenName.length > 30) score -= 2
   
   // Prefer shorter, more readable names
-  score += Math.max(0, 10 - tokenName.length) * 0.1
+  score += Math.max(0, 15 - tokenName.length) * 0.2
   
   return score
 }
