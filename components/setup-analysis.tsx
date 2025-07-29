@@ -13,6 +13,7 @@ import { extractThemes } from "@/lib/token-utils"
 import { ERROR_MESSAGES } from "@/lib/constants"
 import type { AnalysisResult, Theme } from "@/lib/types"
 import { analyzeClientSide } from "@/lib/client-analyzer"
+import { getAssetPath } from "@/lib/utils"
 
 interface SetupAnalysisProps {
   onAnalysisComplete: (results: AnalysisResult) => void
@@ -59,7 +60,7 @@ export function SetupAnalysis({ onAnalysisComplete, onAnalysisStart, onAnalysisE
         setTimeout(() => reject(new Error('Request timeout')), 10000)
       )
       
-      const fetchPromise = fetch('/crate-library.json')
+      const fetchPromise = fetch(getAssetPath('/crate-library.json'))
       const response = await Promise.race([fetchPromise, timeoutPromise]) as Response
       
       console.log('Response status:', response.status)
@@ -168,7 +169,7 @@ export function SetupAnalysis({ onAnalysisComplete, onAnalysisStart, onAnalysisE
   }
 
   const createDefaultLibraryFile = async (): Promise<File> => {
-    const response = await fetch('/crate-library.json')
+    const response = await fetch(getAssetPath('/crate-library.json'))
     const tokensData = await response.json()
     const blob = new Blob([JSON.stringify(tokensData, null, 2)], { type: 'application/json' })
     return new File([blob], 'crate-library.json', { type: 'application/json' })

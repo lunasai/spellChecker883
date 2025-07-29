@@ -39,3 +39,9 @@ export function calculateLevenshteinDistance(str1: string, str2: string): number
 
   return matrix[str2.length][str1.length]
 }
+
+// Utility function to get the correct base path for static assets
+export function getAssetPath(path: string): string {
+  const basePath = process.env.NODE_ENV === 'production' ? '/spellChecker883' : ''
+  return `${basePath}${path}`
+}
