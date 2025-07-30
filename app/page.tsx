@@ -4,15 +4,20 @@ import type React from "react"
 import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { PieChart, FileText, Palette } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { PieChart, FileText, Palette, Layers, Component, List } from "lucide-react"
 import { FrameAnalysisView } from "@/components/frame-analysis-view"
+import { AllMatchesView } from "@/components/all-matches-view"
 import { SetupAnalysis } from "@/components/setup-analysis"
 import type { AnalysisResult } from "@/lib/types"
 import { getStatusColor, getTokenTypeColor, VISUALIZATION_COLORS } from "@/lib/color-constants"
 
+
+
 export default function DesignTokenAuditTool() {
   const [results, setResults] = useState<AnalysisResult | null>(null)
   const [error, setError] = useState("")
+  const [activeTab, setActiveTab] = useState<'frame' | 'all-matches'>('frame')
 
   const handleAnalysisComplete = (analysisResults: AnalysisResult) => {
     setResults(analysisResults)
@@ -55,24 +60,56 @@ export default function DesignTokenAuditTool() {
                   <OverviewCard results={results} />
                 </div>
                 
-                {/* Frame Analysis Section */}
+                {/* Analysis Tabs */}
                 <div>
                   <div className="mb-8">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h2 className="text-2xl font-bold text-gray-900">Frame by frame</h2>
-                        <p className="text-gray-600 mt-1">Detailed analysis of each frame</p>
+                        <h2 className="text-2xl font-bold text-gray-900">Analysis</h2>
+                        <p className="text-gray-600 mt-1">Choose your analysis type</p>
                       </div>
-                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 px-4 py-2">
-                        {results.figmaAnalysis.frameAnalyses?.length || 0} Frame{(results.figmaAnalysis.frameAnalyses?.length || 0) !== 1 ? 's' : ''}
-                      </Badge>
+                      <div className="flex gap-2">
+                        <Button
+                          variant={activeTab === 'frame' ? "default" : "outline"}
+                          className="flex items-center gap-2"
+                          onClick={() => setActiveTab('frame')}
+                        >
+                          <Layers className="w-4 h-4" />
+                          Frame by Frame
+                          <Badge variant="secondary" className="ml-2">
+                            {results.figmaAnalysis.frameAnalyses?.length || 0}
+                          </Badge>
+                        </Button>
+                        <Button
+                          variant={activeTab === 'all-matches' ? "default" : "outline"}
+                          className="flex items-center gap-2"
+                          onClick={() => setActiveTab('all-matches')}
+                        >
+                          <List className="w-4 h-4" />
+                          All Matches
+                          <Badge variant="secondary" className="ml-2">
+                            {results.figmaAnalysis.frameAnalyses?.reduce((total, frame) => 
+                              total + frame.rawValues.length, 0) || 0}
+                          </Badge>
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                  <FrameAnalysisView
-                    frameAnalyses={results.figmaAnalysis.frameAnalyses || []}
-                    tokenMatches={results.tokenMatches}
-                    unmatchedValues={results.unmatchedValues}
-                  />
+                  
+                  {/* Analysis Content */}
+                  {activeTab === 'frame' ? (
+                    <FrameAnalysisView
+                      frameAnalyses={results.figmaAnalysis.frameAnalyses || []}
+                      tokenMatches={results.tokenMatches}
+                      unmatchedValues={results.unmatchedValues}
+                    />
+                  ) : (
+                    <AllMatchesView
+                      frameAnalyses={results.figmaAnalysis.frameAnalyses || []}
+                      tokenMatches={results.tokenMatches}
+                      unmatchedValues={results.unmatchedValues}
+                    />
+                  )}
                 </div>
               </>
             ) : (
@@ -89,9 +126,7 @@ function AppHeader() {
   return (
     <div className="text-center mb-12 mt-16">
       <div className="inline-flex items-center gap-3">
-        <div className="p-3 rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-300">
-          <span className="text-2xl">🐱</span>
-        </div>
+        <span className="text-2xl">🐱</span>
         <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
           Spell checker
         </h1>
@@ -152,98 +187,84 @@ function OverviewCard({ results }: { results: AnalysisResult }) {
       </CardHeader>
       <CardContent className="space-y-6 p-6">
         <div className="grid grid-cols-2 gap-6">
-          {/* Left Column - Tokenization Overview */}
-          <div className="text-center">
+          {/* Left Column - Tokenization Overview with Stacked Bar Charts */}
+          <div className="space-y-6">
+            {/* Main percentage with enhanced styling */}
+            <div className="text-center">
+              <div className="text-6xl font-bold bg-gradient-to-r from-green-600 to-green-700 bg-clip-text text-transparent mb-3">
+                {tokenizedPercentage}%
+              </div>
+              <div className="text-lg text-gray-700 font-medium">already tokenized</div>
+            </div>
+            
+            {/* Stacked Bar Chart Overview */}
             <div className="space-y-4">
-              {/* Main percentage with enhanced styling */}
-              <div>
-                <div className="text-6xl font-bold bg-gradient-to-r from-green-600 to-green-700 bg-clip-text text-transparent mb-3">
-                  {tokenizedPercentage}%
-                </div>
-                <div className="text-lg text-gray-700 font-medium">already tokenized</div>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-gray-700">Tokenization Status</h3>
+                <span className="text-xs text-gray-500">{totalAnalyzed} total properties</span>
               </div>
               
-              {/* Visual progress breakdown */}
-              <div className="space-y-4">
-                {/* Can be tokenized */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-3 h-3 rounded-full shadow-sm"
-                        style={{ backgroundColor: VISUALIZATION_COLORS.STATUS.MATCHED.primary }}
-                      ></div>
-                      <span className="font-medium text-gray-700">Can be tokenized</span>
-                    </div>
-                    <span 
-                      className="font-bold"
-                      style={{ color: VISUALIZATION_COLORS.STATUS.MATCHED.dark }}
-                    >{matchesPercentage}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
-                    <div 
-                      className="h-2.5 rounded-full transition-all duration-500 ease-out"
-                      style={{ 
-                        width: `${matchesPercentage}%`,
-                        background: `linear-gradient(to right, ${VISUALIZATION_COLORS.STATUS.MATCHED.primary}, ${VISUALIZATION_COLORS.STATUS.MATCHED.dark})`
-                      }}
-                    />
-                  </div>
+              {/* Main Stacked Bar */}
+              <div className="space-y-3">
+                <div className="relative w-full h-8 bg-gray-100 rounded-lg overflow-hidden shadow-inner">
+                  {/* Tokenized (green) */}
+                  <div 
+                    className="absolute left-0 top-0 h-full transition-all duration-700 ease-out"
+                    style={{ 
+                      width: `${tokenizedPercentage}%`,
+                      background: `linear-gradient(135deg, ${VISUALIZATION_COLORS.STATUS.TOKENIZED.primary}, ${VISUALIZATION_COLORS.STATUS.TOKENIZED.dark})`
+                    }}
+                  />
+                  {/* Can be tokenized (blue) */}
+                  <div 
+                    className="absolute top-0 h-full transition-all duration-700 ease-out"
+                    style={{ 
+                      left: `${tokenizedPercentage}%`, 
+                      width: `${matchesPercentage}%`,
+                      background: `linear-gradient(135deg, ${VISUALIZATION_COLORS.STATUS.MATCHED.primary}, ${VISUALIZATION_COLORS.STATUS.MATCHED.dark})`
+                    }}
+                  />
+                  {/* Need attention (amber) */}
+                  <div 
+                    className="absolute top-0 h-full transition-all duration-700 ease-out"
+                    style={{ 
+                      left: `${tokenizedPercentage + matchesPercentage}%`, 
+                      width: `${unmatchesPercentage}%`,
+                      background: `linear-gradient(135deg, ${VISUALIZATION_COLORS.STATUS.NEEDS_ATTENTION.primary}, ${VISUALIZATION_COLORS.STATUS.NEEDS_ATTENTION.dark})`
+                    }}
+                  />
                 </div>
-
-                {/* Need attention */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-3 h-3 rounded-full shadow-sm"
-                        style={{ backgroundColor: VISUALIZATION_COLORS.STATUS.NEEDS_ATTENTION.primary }}
-                      ></div>
-                      <span className="font-medium text-gray-700">Need attention</span>
-                    </div>
-                    <span 
-                      className="font-bold"
-                      style={{ color: VISUALIZATION_COLORS.STATUS.NEEDS_ATTENTION.dark }}
-                    >{unmatchesPercentage}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                
+                {/* Legend */}
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="flex items-center gap-2">
                     <div 
-                      className="h-2.5 rounded-full transition-all duration-500 ease-out"
-                      style={{ 
-                        width: `${unmatchesPercentage}%`,
-                        background: `linear-gradient(to right, ${VISUALIZATION_COLORS.STATUS.NEEDS_ATTENTION.primary}, ${VISUALIZATION_COLORS.STATUS.NEEDS_ATTENTION.dark})`
-                      }}
+                      className="w-3 h-3 rounded-sm shadow-sm"
+                      style={{ backgroundColor: VISUALIZATION_COLORS.STATUS.TOKENIZED.primary }}
                     />
+                    <span className="font-medium text-gray-700">Tokenized</span>
+                    <span className="text-gray-500">({tokenizedProperties})</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div 
+                      className="w-3 h-3 rounded-sm shadow-sm"
+                      style={{ backgroundColor: VISUALIZATION_COLORS.STATUS.MATCHED.primary }}
+                    />
+                    <span className="font-medium text-gray-700">Matched</span>
+                    <span className="text-gray-500">({totalMatchedInstances})</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div 
+                      className="w-3 h-3 rounded-sm shadow-sm"
+                      style={{ backgroundColor: VISUALIZATION_COLORS.STATUS.NEEDS_ATTENTION.primary }}
+                    />
+                    <span className="font-medium text-gray-700">Issues</span>
+                    <span className="text-gray-500">({totalUnmatchedInstances})</span>
                   </div>
                 </div>
               </div>
+              
 
-              {/* Summary stats */}
-              <div className="pt-4 border-t border-gray-100">
-                <div className="grid grid-cols-3 gap-4 text-xs">
-                  <div className="text-center">
-                    <div 
-                      className="text-lg font-bold"
-                      style={{ color: VISUALIZATION_COLORS.STATUS.TOKENIZED.dark }}
-                    >{tokenizedProperties}</div>
-                    <div className="text-gray-500">Tokenized</div>
-                  </div>
-                  <div className="text-center">
-                    <div 
-                      className="text-lg font-bold"
-                      style={{ color: VISUALIZATION_COLORS.STATUS.MATCHED.dark }}
-                    >{totalMatchedInstances}</div>
-                    <div className="text-gray-500">Matched</div>
-                  </div>
-                  <div className="text-center">
-                    <div 
-                      className="text-lg font-bold"
-                      style={{ color: VISUALIZATION_COLORS.STATUS.NEEDS_ATTENTION.dark }}
-                    >{totalUnmatchedInstances}</div>
-                    <div className="text-gray-500">Issues</div>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
 

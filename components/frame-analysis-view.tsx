@@ -275,6 +275,8 @@ function ValueMatchCard({ valueData, type, frame }: { valueData: any; type: stri
         isComponentInstances={valueData.isComponentInstances}
         componentIds={valueData.componentIds}
         componentNames={valueData.componentNames}
+        componentTypes={valueData.componentTypes}
+        shouldShowIssues={valueData.shouldShowIssues}
       />
     </div>
   )
@@ -293,6 +295,8 @@ function ValueToMatchRelationship({
   isComponentInstances,
   componentIds,
   componentNames,
+  componentTypes,
+  shouldShowIssues,
 }: {
   value: string
   type: string
@@ -306,6 +310,8 @@ function ValueToMatchRelationship({
   isComponentInstances?: boolean[]
   componentIds?: (string | undefined)[]
   componentNames?: (string | undefined)[]
+  componentTypes?: ('EXTERNAL_INSTANCE' | 'LOCAL_COMPONENT' | 'LOCAL_INSTANCE' | 'REGULAR_NODE')[]
+  shouldShowIssues?: boolean[]
 }) {
   return (
     <div className="space-y-4">
@@ -331,6 +337,8 @@ function ValueToMatchRelationship({
         isComponentInstances={isComponentInstances}
         componentIds={componentIds}
         componentNames={componentNames}
+        componentTypes={componentTypes}
+        shouldShowIssues={shouldShowIssues}
       />
     </div>
   )
@@ -546,7 +554,9 @@ function OccurrencesList({
   figmaUrl, 
   isComponentInstances, 
   componentIds,
-  componentNames
+  componentNames,
+  componentTypes,
+  shouldShowIssues
 }: { 
   nodeIds?: string[]
   layerNames?: string[]
@@ -554,6 +564,8 @@ function OccurrencesList({
   isComponentInstances?: boolean[]
   componentIds?: (string | undefined)[]
   componentNames?: (string | undefined)[]
+  componentTypes?: ('EXTERNAL_INSTANCE' | 'LOCAL_COMPONENT' | 'LOCAL_INSTANCE' | 'REGULAR_NODE')[]
+  shouldShowIssues?: boolean[]
 }) {
   if (!nodeIds || nodeIds.length === 0) return null
 
@@ -566,16 +578,71 @@ function OccurrencesList({
           const isComponentInstance = isComponentInstances && isComponentInstances[index]
           const componentId = componentIds && componentIds[index]
           const componentName = componentNames && componentNames[index]
+          const componentType = componentTypes && componentTypes[index]
+          const shouldShowIssue = shouldShowIssues && shouldShowIssues[index]
           
-          // Extract the specific layer name (the actual element within the component)
-          const specificLayerName = layerName.includes(' > ') 
-            ? layerName.split(' > ').pop() || 'Unknown'
-            : layerName
+          // Skip external library instances that shouldn't show issues
+          if (componentType === 'EXTERNAL_INSTANCE' && shouldShowIssue === false) {
+            return null
+          }
           
-          // Create the display text
-          const displayText = isComponentInstance && componentName
-            ? `${specificLayerName} • ${componentName}`
-            : specificLayerName
+          // Improved display text logic
+          let displayText = layerName
+          
+          if (isComponentInstance && componentName) {
+            // For component instances, show the component name as the primary identifier
+            // If the layer name is the same as component name, just use component name
+            if (componentName === layerName) {
+              displayText = componentName
+            } else if (componentName !== layerName && !layerName.includes(componentName)) {
+              // If they're different, show both but prioritize component name
+              displayText = `${componentName} • ${layerName}`
+            } else {
+              displayText = componentName
+            }
+          } else if (isComponentInstance) {
+            // Component instance but no component name - use the layer name
+            displayText = layerName
+          }
+          
+          // Clean up the display text - remove redundant parts
+          displayText = displayText
+            .replace(/\s*•\s*$/, '') // Remove trailing bullet
+            .replace(/^\s*•\s*/, '') // Remove leading bullet
+            .replace(/\s*•\s*•\s*/g, ' • ') // Fix double bullets
+          
+          // Limit display text to 50 characters
+          if (displayText.length > 50) {
+            displayText = displayText.substring(0, 47) + '...'
+          }
+          
+          // Debug logging for URL generation
+          console.log(`Occurrence ${index}:`, {
+            nodeId,
+            componentId,
+            componentType,
+            layerName,
+            componentName,
+            displayText: displayText
+          })
+          
+          // Determine the button styling based on component type
+          let buttonClassName = 'bg-white/90 hover:bg-gray-50/90 border-gray-300/60'
+          let tooltipText = 'Layer'
+          
+          if (componentType === 'EXTERNAL_INSTANCE') {
+            buttonClassName = 'bg-green-50/90 hover:bg-green-100/90 border-green-300/60'
+            tooltipText = 'External Library Component (Tokenized)'
+          } else if (componentType === 'LOCAL_COMPONENT') {
+            buttonClassName = 'bg-blue-50/90 hover:bg-blue-100/90 border-blue-300/60'
+            tooltipText = 'Local Component Definition'
+          } else if (componentType === 'LOCAL_INSTANCE') {
+            buttonClassName = 'bg-purple-50/90 hover:bg-purple-100/90 border-purple-300/60'
+            tooltipText = 'Local Component Instance'
+          } else if (isComponentInstance) {
+            buttonClassName = 'bg-blue-50/90 hover:bg-blue-100/90 border-blue-300/60'
+            tooltipText = 'Component Instance'
+          }
           
           return (
             <Button
@@ -583,18 +650,14 @@ function OccurrencesList({
               variant="outline"
               size="sm"
               asChild
-              className={`h-8 px-3 text-xs shadow-sm ${
-                isComponentInstance 
-                  ? 'bg-blue-50/90 hover:bg-blue-100/90 border-blue-300/60' 
-                  : 'bg-white/90 hover:bg-gray-50/90 border-gray-300/60'
-              }`}
+              className={`h-8 px-3 text-xs shadow-sm ${buttonClassName}`}
             >
               <a 
-                href={generateFigmaNodeUrl(figmaUrl, nodeId)} 
+                href={generateFigmaNodeUrl(figmaUrl, nodeId, componentType, componentId)} 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="flex items-center gap-1"
-                title={isComponentInstance ? `Component Instance${componentId ? ` (ID: ${componentId})` : ''}` : 'Layer'}
+                title={`${tooltipText}${componentId ? ` (ID: ${componentId})` : ''}`}
               >
                 <ExternalLink className="w-3 h-3" />
                 {displayText}

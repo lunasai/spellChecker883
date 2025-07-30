@@ -11,26 +11,59 @@ export function generateFigmaFrameUrl(baseUrl: string, frameId: string): string 
   }
 }
 
-export function generateFigmaNodeUrl(baseUrl: string, nodeId: string): string {
+// Function to determine the best ID to use for URL generation
+export function getBestNodeIdForUrl(nodeId: string, componentId?: string, componentType?: string): string {
+  // For component instances, try to use the componentId if available
+  if (componentType === 'LOCAL_INSTANCE' || componentType === 'EXTERNAL_INSTANCE') {
+    if (componentId) {
+      console.log(`Using componentId for URL: ${componentId} (instead of nodeId: ${nodeId})`)
+      return componentId
+    }
+  }
+  
+  // For local components, use the nodeId
+  if (componentType === 'LOCAL_COMPONENT') {
+    console.log(`Using nodeId for local component: ${nodeId}`)
+    return nodeId
+  }
+  
+  // Default to nodeId
+  console.log(`Using default nodeId: ${nodeId}`)
+  return nodeId
+}
+
+export function generateFigmaNodeUrl(baseUrl: string, nodeId: string, componentType?: string, componentId?: string): string {
   try {
     const url = new URL(baseUrl)
     
+    // Determine the best ID to use for URL generation
+    const bestNodeId = getBestNodeIdForUrl(nodeId, componentId, componentType)
+    
     // Ensure we have a valid node ID
-    if (!nodeId || nodeId.trim() === '') {
+    if (!bestNodeId || bestNodeId.trim() === '') {
+      console.warn('Empty nodeId provided to generateFigmaNodeUrl')
       return baseUrl
     }
     
+    console.log(`Generating Figma URL for bestNodeId: ${bestNodeId}, componentType: ${componentType}`)
+    
     // Encode the node ID properly for Figma URLs
     // Figma uses %3A as the separator for node IDs in URLs
-    const encodedNodeId = nodeId.replace(/-/g, APP_CONFIG.FIGMA_API.NODE_SEPARATOR)
+    const encodedNodeId = bestNodeId.replace(/-/g, APP_CONFIG.FIGMA_API.NODE_SEPARATOR)
+    
+    console.log(`Encoded nodeId: ${encodedNodeId}`)
     
     // Set the node-id parameter
     url.searchParams.set("node-id", encodedNodeId)
     
-    // For component instances, we might also need to ensure we're targeting the right view
-    // Some component instances might need additional parameters, but the basic node-id should work
+    // Add additional parameters for better Figma navigation
+    url.searchParams.set("p", "f") // Focus mode
+    url.searchParams.set("t", "Ehm6iR2nFVZ17IBN-0") // Default view mode
     
-    return url.toString()
+    const finalUrl = url.toString()
+    console.log(`Generated URL: ${finalUrl}`)
+    
+    return finalUrl
   } catch (error) {
     console.warn('Failed to generate Figma node URL:', error)
     return baseUrl
@@ -52,8 +85,9 @@ export function generateFigmaComponentUrl(baseUrl: string, nodeId: string): stri
     // Set the node-id parameter
     url.searchParams.set("node-id", encodedNodeId)
     
-    // Component instances should work with the same URL structure
-    // The key is ensuring the node-id is properly encoded
+    // Add additional parameters for better Figma navigation
+    url.searchParams.set("p", "f") // Focus mode
+    url.searchParams.set("t", "Ehm6iR2nFVZ17IBN-0") // Default view mode
     
     return url.toString()
   } catch (error) {

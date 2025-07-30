@@ -84,6 +84,7 @@ export async function analyzeClientSide(
         totalElements: analysisResult.totalElements,
         tokenizedProperties: analysisResult.tokenizedProperties,
         frameAnalyses: analysisResult.frameAnalyses,
+        allComponents: analysisResult.allComponents,
       },
       tokenMatches: matchResult.tokenMatches,
       unmatchedValues: matchResult.unmatchedValues,

@@ -78,13 +78,15 @@ export interface FigmaNode {
 export interface ValueLocation {
   path: string
   nodeId?: string
+  componentId?: string // Separate from nodeId for component instances
   frameId?: string
   frameName?: string
   framePath?: string
   // Component-related information
   isComponentInstance?: boolean
-  componentId?: string
   componentName?: string
+  componentType?: 'EXTERNAL_INSTANCE' | 'LOCAL_COMPONENT' | 'LOCAL_INSTANCE' | 'REGULAR_NODE'
+  shouldShowIssues?: boolean
 }
 
 export interface HardcodedValue {
@@ -131,6 +133,23 @@ export interface AnalysisResult {
     totalElements: number
     tokenizedProperties?: number
     frameAnalyses?: FrameAnalysis[]
+    allComponents?: Array<{
+      componentId: string
+      componentName: string
+      componentType: 'EXTERNAL_INSTANCE' | 'LOCAL_COMPONENT' | 'LOCAL_INSTANCE' | 'REGULAR_NODE'
+      instances: Array<{
+        nodeId: string
+        layerName: string
+        frameId: string
+        frameName: string
+        framePath: string
+        figmaUrl: string
+        hasOverwrittenProperties: boolean
+        overwrittenProperties: string[]
+        isDetached: boolean
+      }>
+    }>
+    detachedComponents?: DetachedComponentInfo[]
   }
   tokenMatches: TokenMatch[]
   unmatchedValues: UnmatchedValue[]
@@ -159,6 +178,8 @@ export interface FrameAnalysis {
     isComponentInstances?: boolean[]
     componentIds?: (string | undefined)[]
     componentNames?: (string | undefined)[]
+    componentTypes?: ('EXTERNAL_INSTANCE' | 'LOCAL_COMPONENT' | 'LOCAL_INSTANCE' | 'REGULAR_NODE')[]
+    shouldShowIssues?: boolean[]
     recommendations: Array<{
       tokenName: string
       tokenValue: string
@@ -193,4 +214,22 @@ export interface BoundVariables {
   paddingTop?: BoundVariable
   paddingBottom?: BoundVariable
   [key: string]: BoundVariable | undefined // Allow dynamic property access
+}
+
+// Enhanced detached component detection types
+export interface DetachedComponentInfo {
+  nodeId: string
+  nodeName: string
+  nodeType: string
+  frameId?: string
+  frameName?: string
+  framePath?: string
+  figmaUrl?: string
+  confidence: 'high' | 'medium' | 'low'
+  detectionMethod: 'api' | 'heuristic'
+  reason: string
+  componentName?: string
+  hasComponentProperties?: boolean
+  hasBoundVariables?: boolean
+  hasComponentStyles?: boolean
 }

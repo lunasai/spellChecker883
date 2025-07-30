@@ -4,6 +4,25 @@ import { generateFigmaFrameUrl } from "./figma-utils"
 import type { FigmaNode, HardcodedValue, FrameAnalysis, FrameInfo, ResolvedToken } from "./types"
 import axios from "axios"
 
+// --- Logging Configuration ---
+// Set these to true when you need detailed debugging information
+// DEBUG_MODE: Controls detailed node processing logs
+// LOG_COMPONENT_ANALYSIS: Controls component analysis logs
+const DEBUG_MODE = false; // Set to true for detailed debugging
+const LOG_COMPONENT_ANALYSIS = false; // Set to true to see component analysis details
+
+function logDebug(message: string, ...args: any[]) {
+  if (DEBUG_MODE) {
+    console.log(message, ...args);
+  }
+}
+
+function logComponent(message: string, ...args: any[]) {
+  if (LOG_COMPONENT_ANALYSIS) {
+    console.log(message, ...args);
+  }
+}
+
 // --- Figma Style Fetching and Mapping ---
 
 export async function fetchFigmaStyles(figmaFileKey: string, personalAccessToken: string) {
@@ -43,11 +62,11 @@ export async function fetchFigmaStyles(figmaFileKey: string, personalAccessToken
   allStyleIds.forEach((id: string) => {
     if (nodeMap[id]) {
       styleIdToStyle[id] = nodeMap[id];
-      console.log(`Mapped style ${id}: ${nodeMap[id].name} (${nodeMap[id].type})`);
+      logDebug(`Mapped style ${id}: ${nodeMap[id].name} (${nodeMap[id].type})`);
       
       // Log more details about EFFECT styles specifically
       if (nodeMap[id].type === 'RECTANGLE' && nodeMap[id].cornerRadius !== undefined) {
-        console.log(`  - EFFECT style has cornerRadius: ${nodeMap[id].cornerRadius}px`);
+        logDebug(`  - EFFECT style has cornerRadius: ${nodeMap[id].cornerRadius}px`);
       }
     }
   });
@@ -64,10 +83,10 @@ function hasNodeStyles(node: FigmaNode, styleIdToStyle?: Record<string, any>): b
   // @ts-ignore
   if ((node as any).styles && styleIdToStyle) {
     const stylesObj = (node as any).styles;
-    console.log(`Checking styles for node "${node.name}":`, stylesObj);
+    logDebug(`Checking styles for node "${node.name}":`, stylesObj);
     for (const key in stylesObj) {
       if (stylesObj[key] && styleIdToStyle[stylesObj[key]]) {
-        console.log(`Node "${node.name}" has style "${key}" applied: ${stylesObj[key]}`);
+        logDebug(`Node "${node.name}" has style "${key}" applied: ${stylesObj[key]}`);
         return true;
       }
     }
@@ -75,13 +94,13 @@ function hasNodeStyles(node: FigmaNode, styleIdToStyle?: Record<string, any>): b
 
   // Check if this is a component instance and has component properties that might include styles
   if (node.type === 'INSTANCE' && node.componentProperties) {
-    console.log(`Checking component properties for "${node.name}":`, node.componentProperties);
+    logDebug(`Checking component properties for "${node.name}":`, node.componentProperties);
     // Component instances can have overridden properties that include styles
     for (const [key, value] of Object.entries(node.componentProperties)) {
       if (value && typeof value === 'object' && 'type' in value) {
         // Check if the property value is a style reference
         if (value.type === 'STYLE' && value.value && styleIdToStyle && styleIdToStyle[value.value]) {
-          console.log(`Node "${node.name}" has component property "${key}" with style: ${value.value}`);
+          logDebug(`Node "${node.name}" has component property "${key}" with style: ${value.value}`);
           return true;
         }
       }
@@ -92,50 +111,32 @@ function hasNodeStyles(node: FigmaNode, styleIdToStyle?: Record<string, any>): b
   // with detached components that have some bound variables but detached fills
   // Instead, we check bound variables per property in the specific extraction functions
 
-  console.log(`Node "${node.name}" has no styles or component properties with styles`);
+  logDebug(`Node "${node.name}" has no styles or component properties with styles`);
   return false;
 }
 
 // Enhanced function to check for styles including component hierarchy
 function hasNodeOrParentStyles(node: FigmaNode, styleIdToStyle?: Record<string, any>, context?: TraversalContext): boolean {
-  // Check if the current node has styles applied
+  // First check if the current node has styles
   if (hasNodeStyles(node, styleIdToStyle)) {
-    console.log(`Node "${node.name}" has styles applied`);
     return true;
   }
 
-  // Check if this node has any bound variables that might indicate inherited styles
-  // This is especially important for typography where styles can be inherited from parent frames
-  if (node.boundVariables) {
-    const typographyKeys = ["fontSize", "fontFamily", "fontWeight", "lineHeight"];
-    for (const key of typographyKeys) {
-      if (node.boundVariables[key]) {
-        console.log(`Node "${node.name}" has bound typography variable "${key}" - likely inherited from parent style`);
-        return true;
-      }
-    }
-  }
-
-  // Check if we're inside a component that might have typography styles
-  if (context?.isInsideComponent) {
-    console.log(`Node "${node.name}" is inside a component - checking for component-level typography styles`);
-    
-    // For text nodes inside components, if they have complete typography properties set,
-    // they're likely inheriting from a component-level typography style
-    if (node.style && node.type === 'TEXT') {
-      const hasFontSize = node.style.fontSize !== undefined;
-      const hasFontFamily = node.style.fontFamily !== undefined;
-      const hasFontWeight = node.style.fontWeight !== undefined;
-      
-      if (hasFontSize && hasFontFamily && hasFontWeight) {
-        console.log(`Node "${node.name}" has complete typography set inside component - likely from component style`);
-        return true;
-      }
-    }
+  // If we're inside a component context, check if the parent component has styles
+  if (context?.isInsideComponent && context.currentComponentId) {
+    // This would require additional logic to check parent component styles
+    // For now, we'll just check the current node
+    return false;
   }
 
   return false;
 }
+
+// Component type cache to avoid repeated analysis
+const componentTypeCache = new Map<string, any>();
+
+// Component issue analysis cache
+const componentIssueCache = new Map<string, any>();
 
 function extractTypographyFromNode(
   node: FigmaNode,
@@ -152,14 +153,14 @@ function extractTypographyFromNode(
     return { hasAnyTokenizedProperties, hardcodedPropertiesFound }
   }
 
-  console.log(`Typography extraction for "${node.name}":`);
-  console.log(`  - style:`, node.style);
-  console.log(`  - boundVariables:`, node.boundVariables);
+  logDebug(`Typography extraction for "${node.name}":`);
+  logDebug(`  - style:`, node.style);
+  logDebug(`  - boundVariables:`, node.boundVariables);
 
   // For typography, if there's a style applied, treat it as fully tokenized
   // This is because typography styles in Figma work as cohesive units
   if (hasNodeOrParentStyles(node, styleIdToStyle, context)) {
-    console.log(`Typography style detected for "${node.name}" - treating as fully tokenized`);
+    logDebug(`Typography style detected for "${node.name}" - treating as fully tokenized`);
     return { hasAnyTokenizedProperties: true, hardcodedPropertiesFound: 0 };
   }
 
@@ -168,7 +169,7 @@ function extractTypographyFromNode(
   if (currentFrame && context?.parentFrames) {
     const parentFrame = context.parentFrames.find(frame => frame.id === currentFrame?.id);
     if (parentFrame && hasNodeStyles(parentFrame, styleIdToStyle)) {
-      console.log(`Parent frame "${parentFrame.name}" has styles applied - treating typography as tokenized`);
+      logDebug(`Parent frame "${parentFrame.name}" has styles applied - treating typography as tokenized`);
       return { hasAnyTokenizedProperties: true, hardcodedPropertiesFound: 0 };
     }
   }
@@ -178,7 +179,7 @@ function extractTypographyFromNode(
   // @ts-ignore
   if ((node as any).styles && (node as any).styles.text && styleIdToStyle && styleIdToStyle[(node as any).styles.text]) {
     styleBoundVariables = styleIdToStyle[(node as any).styles.text].boundVariables || {};
-    console.log(`  - styleBoundVariables:`, styleBoundVariables);
+    logDebug(`  - styleBoundVariables:`, styleBoundVariables);
   }
 
   // Check if ANY typography property is bound to a variable (node or style)
@@ -192,7 +193,7 @@ function extractTypographyFromNode(
     const hasStyleBoundVariable = styleBoundVariables && styleBoundVariables[key];
     
     if (hasNodeBoundVariable || hasStyleBoundVariable) {
-      console.log(`Typography property "${key}" has bound variables for "${node.name}" - treating as tokenized`);
+      logDebug(`Typography property "${key}" has bound variables for "${node.name}" - treating as tokenized`);
       hasAnyTypographyBoundVariables = true;
       break; // If any typography property is bound, treat all as tokenized
     }
@@ -200,14 +201,14 @@ function extractTypographyFromNode(
 
   // If any typography property is bound, skip adding value occurrences (hide from results)
   if (hasAnyTypographyBoundVariables) {
-    console.log(`Typography has bound variables for "${node.name}" - treating as fully tokenized`);
+    logDebug(`Typography has bound variables for "${node.name}" - treating as fully tokenized`);
     return { hasAnyTokenizedProperties: true, hardcodedPropertiesFound: 0 };
   }
 
   // Check if this node is inside a component that might have typography styles
   // Component instances often inherit typography from their main component
   if (context?.isInsideComponent || node.type === 'INSTANCE') {
-    console.log(`Node "${node.name}" is inside a component - checking for inherited typography styles`);
+    logDebug(`Node "${node.name}" is inside a component - checking for inherited typography styles`);
     
     // Check if any typography properties have values that suggest they're from a style
     // This is a heuristic: if all typography properties are set and consistent, they might be from a style
@@ -218,7 +219,7 @@ function extractTypographyFromNode(
     
     // If we have a complete typography set, it's likely from a style
     if (hasFontSize && hasFontFamily && hasFontWeight) {
-      console.log(`Node "${node.name}" has complete typography set - likely from inherited style, treating as tokenized`);
+      logDebug(`Node "${node.name}" has complete typography set - likely from inherited style, treating as tokenized`);
       return { hasAnyTokenizedProperties: true, hardcodedPropertiesFound: 0 };
     }
   }
@@ -250,7 +251,7 @@ function extractTypographyFromNode(
   typographyProperties.forEach(({ value, suffix, name }) => {
     if (value !== undefined) {
       const formattedValue = suffix ? `${value}${suffix}` : String(value)
-      console.log(`  - Adding hardcoded typography: ${formattedValue} (${name}) for "${node.name}"`);
+      logDebug(`  - Adding hardcoded typography: ${formattedValue} (${name}) for "${node.name}"`);
       addHardcodedValue(formattedValue, "typography", currentPath, currentFrame, hardcodedValues, node.id, node, context)
       hardcodedPropertiesFound++
     }
@@ -281,6 +282,23 @@ export interface FigmaAnalysisResult {
   frameAnalyses: FrameAnalysis[]
   totalElements: number
   tokenizedProperties: number
+  allComponents: Array<{
+    componentId: string
+    componentName: string
+    componentType: 'EXTERNAL_INSTANCE' | 'LOCAL_COMPONENT' | 'LOCAL_INSTANCE' | 'REGULAR_NODE'
+    instances: Array<{
+      nodeId: string
+      layerName: string
+      frameId: string
+      frameName: string
+      framePath: string
+      figmaUrl: string
+      hasOverwrittenProperties: boolean
+      overwrittenProperties: string[]
+      isDetached: boolean
+    }>
+  }>
+  detachedComponents?: DetachedComponentInfo[]
 }
 
 interface NodeAnalysisStats {
@@ -306,8 +324,7 @@ export function analyzeFigmaFileByFrames(
   }
 
   const parentFrames = findParentFrames(document)
-
-  traverseDocumentNodes(document, {
+  const context = {
     hardcodedValues,
     frameAnalyses,
     parentFrames,
@@ -316,7 +333,26 @@ export function analyzeFigmaFileByFrames(
     stats,
     styleIdToStyle,
     isInsideComponent: false, // Start outside any component
+    allComponents: new Map(), // Initialize component collection
+  }
+
+  // Enhanced detached component detection
+  logComponent("🔍 Starting enhanced detached component detection...")
+  const detachedComponents = detectDetachedComponents(document, figmaUrl)
+  
+  // Create a set of known component names from the detected components
+  const knownComponentNames = new Set<string>()
+  detachedComponents.forEach(detached => {
+    if (detached.componentName) {
+      knownComponentNames.add(detached.componentName)
+    }
+    // Also add the node name as it might be a component name
+    knownComponentNames.add(detached.nodeName)
   })
+  
+  logComponent(`📋 Found ${detachedComponents.length} detached components. Known component names: ${Array.from(knownComponentNames).join(', ')}`)
+
+  traverseDocumentNodes(document, context)
 
   const hardcodedValuesFormatted = convertToHardcodedValuesFormat(hardcodedValues)
 
@@ -330,6 +366,8 @@ export function analyzeFigmaFileByFrames(
     frameAnalyses: Array.from(frameAnalyses.values()),
     totalElements: stats.totalElements,
     tokenizedProperties: stats.tokenizedProperties,
+    allComponents: Array.from(context.allComponents.values()),
+    detachedComponents: detachedComponents,
   }
 }
 
@@ -360,7 +398,385 @@ interface TraversalContext {
   stats: NodeAnalysisStats
   // Component tracking
   currentComponentId?: string
+  currentComponentName?: string
   isInsideComponent: boolean
+  // Component collection for usage analysis
+  allComponents: Map<string, {
+    componentId: string
+    componentName: string
+    componentType: 'EXTERNAL_INSTANCE' | 'LOCAL_COMPONENT' | 'LOCAL_INSTANCE' | 'REGULAR_NODE'
+    instances: Array<{
+      nodeId: string
+      layerName: string
+      frameId: string
+      frameName: string
+      framePath: string
+      figmaUrl: string
+      hasOverwrittenProperties: boolean
+      overwrittenProperties: string[]
+      isDetached: boolean
+    }>
+  }>
+}
+
+// Helper function to check if a node has any bound variables or is a component instance
+function hasTokenizedProperties(node: FigmaNode, context?: TraversalContext): boolean {
+  // Check if it's a component instance
+  const isComponentInstance = node.type === 'INSTANCE' || node.componentId !== undefined || (context?.isInsideComponent || false)
+  
+  // Check if it has any bound variables
+  const hasBoundVariables = !!(node.boundVariables && Object.keys(node.boundVariables).length > 0)
+  
+  // Check if it has any fills with bound variables
+  const hasBoundFills = !!(node.fills && node.fills.some((fill: any) => 
+    fill.boundVariables && Object.keys(fill.boundVariables).length > 0
+  ))
+  
+  // Check if it has any strokes with bound variables
+  const hasBoundStrokes = !!(node.strokes && node.strokes.some((stroke: any) => 
+    stroke.boundVariables && Object.keys(stroke.boundVariables).length > 0
+  ))
+  
+  return isComponentInstance || hasBoundVariables || hasBoundFills || hasBoundStrokes
+}
+
+// Helper function to determine component type and whether to show issues
+function getComponentType(node: FigmaNode, context?: TraversalContext): {
+  type: 'EXTERNAL_INSTANCE' | 'LOCAL_COMPONENT' | 'LOCAL_INSTANCE' | 'REGULAR_NODE'
+  shouldShowIssues: boolean
+  isComponentInstance: boolean
+} {
+  // Create cache key based on node properties that affect component type
+  const cacheKey = `${node.id}-${node.type}-${node.componentId}-${context?.isInsideComponent}-${context?.currentComponentId}`;
+  
+  if (componentTypeCache.has(cacheKey)) {
+    return componentTypeCache.get(cacheKey);
+  }
+
+  logComponent(`🔍 GETTING COMPONENT TYPE for "${node.name}":`)
+  logComponent(`   Node type: ${node.type}`)
+  logComponent(`   Component ID: ${node.componentId}`)
+  logComponent(`   Has bound variables: ${!!(node.boundVariables && Object.keys(node.boundVariables).length > 0)}`)
+  logComponent(`   Is inside component: ${context?.isInsideComponent || false}`)
+  logComponent(`   Current component context: ${context?.currentComponentName || 'none'}`)
+  
+  // Check if it's a component instance (has componentId)
+  const isComponentInstance = node.type === 'INSTANCE' || node.componentId !== undefined
+  const isComponentDefinition = node.type === 'COMPONENT'
+  const isInsideComponent = context?.isInsideComponent || false
+  
+  if (isComponentInstance) {
+    // If it has a componentId, it's an instance of some component
+    // We need to determine if it's from an external library or local
+    
+    // Check for bound variables (indicates external library)
+    const hasBoundVariables = !!(node.boundVariables && Object.keys(node.boundVariables).length > 0)
+    const hasBoundFills = !!(node.fills && node.fills.some((fill: any) => 
+      fill.boundVariables && Object.keys(fill.boundVariables).length > 0
+    ))
+    const hasBoundStrokes = !!(node.strokes && node.strokes.some((stroke: any) => 
+      stroke.boundVariables && Object.keys(stroke.boundVariables).length > 0
+    ))
+    
+    // Check if we're inside an external library component context
+    const isInsideExternalComponent = context?.currentComponentId && 
+      context.allComponents.has(context.currentComponentId) &&
+      context.allComponents.get(context.currentComponentId)?.componentType === 'EXTERNAL_INSTANCE'
+    
+    // Check componentId pattern for external library indicators
+    const hasExternalComponentIdPattern = node.componentId && 
+      typeof node.componentId === 'string' && 
+      (node.componentId.includes(':') || node.componentId.includes('_') || node.componentId.length > 20)
+    
+          // Enhanced external library detection
+      if (hasBoundVariables || hasBoundFills || hasBoundStrokes || isInsideExternalComponent || hasExternalComponentIdPattern) {
+        // External library instance - don't show issues
+        const result = {
+          type: 'EXTERNAL_INSTANCE' as const,
+          shouldShowIssues: false,
+          isComponentInstance: true
+        }
+        logComponent(`✅ COMPONENT TYPE RESULT for "${node.name}": ${result.type} (External Library)`)
+        
+        // Cache the result
+        componentTypeCache.set(cacheKey, result);
+        return result
+      } else {
+        // Local component instance - show issues
+        const result = {
+          type: 'LOCAL_INSTANCE' as const,
+          shouldShowIssues: true,
+          isComponentInstance: true
+        }
+        logComponent(`✅ COMPONENT TYPE RESULT for "${node.name}": ${result.type} (Local Instance)`)
+        
+        // Cache the result
+        componentTypeCache.set(cacheKey, result);
+        return result
+      }
+  } else if (isComponentDefinition) {
+    // Local component definition - show issues
+    const result = {
+      type: 'LOCAL_COMPONENT' as const,
+      shouldShowIssues: true,
+      isComponentInstance: false
+    }
+    logComponent(`✅ COMPONENT TYPE RESULT for "${node.name}": ${result.type} (Local Component)`)
+    
+    // Cache the result
+    componentTypeCache.set(cacheKey, result);
+    return result
+  } else if (isInsideComponent) {
+    // We're inside a component context - this is part of a local component or instance
+    // Determine if the parent component is external or local
+    const parentComponentId = context?.currentComponentId
+    const parentComponentName = context?.currentComponentName
+    
+    // Check if parent is external library
+    if (parentComponentId && context?.allComponents.has(parentComponentId)) {
+      const parentComponent = context.allComponents.get(parentComponentId)!
+      if (parentComponent.componentType === 'EXTERNAL_INSTANCE') {
+        // Inherit external library status from parent
+        const result = {
+          type: 'EXTERNAL_INSTANCE' as const,
+          shouldShowIssues: false,
+          isComponentInstance: true
+        }
+        logComponent(`✅ COMPONENT TYPE RESULT for "${node.name}": ${result.type} (Inherited from External Parent)`)
+        
+        // Cache the result
+        componentTypeCache.set(cacheKey, result);
+        return result
+      }
+    }
+    
+          // Default to local instance if we're inside a component context
+      const result = {
+        type: 'LOCAL_INSTANCE' as const,
+        shouldShowIssues: true,
+        isComponentInstance: true
+      }
+      logComponent(`✅ COMPONENT TYPE RESULT for "${node.name}": ${result.type} (Inside Component Context)`)
+      
+      // Cache the result
+      componentTypeCache.set(cacheKey, result);
+      return result
+      } else {
+      // Regular node - show issues
+      const result = {
+        type: 'REGULAR_NODE' as const,
+        shouldShowIssues: true,
+        isComponentInstance: false
+      }
+      logComponent(`✅ COMPONENT TYPE RESULT for "${node.name}": ${result.type} (Regular Node)`)
+      
+      // Cache the result
+      componentTypeCache.set(cacheKey, result);
+      return result
+    }
+  }
+
+// Helper function to analyze component issues based on the new rules
+function analyzeComponentIssues(
+  node: FigmaNode,
+  componentType: 'EXTERNAL_INSTANCE' | 'LOCAL_COMPONENT' | 'LOCAL_INSTANCE' | 'REGULAR_NODE'
+): {
+  hasOverwrittenProperties: boolean
+  overwrittenProperties: string[]
+  isDetached: boolean
+  shouldShowIssues: boolean
+} {
+  // Create cache key
+  const cacheKey = `${node.id}-${node.type}-${node.componentId}-${componentType}`;
+  
+  if (componentIssueCache.has(cacheKey)) {
+    return componentIssueCache.get(cacheKey);
+  }
+
+  // PROMINENT LOGGING - This should always appear
+  logComponent(`🔍 ANALYZING COMPONENT ISSUES: "${node.name}" (${componentType})`)
+  logComponent(`   Node type: ${node.type}`)
+  logComponent(`   Component ID: ${node.componentId}`)
+  logComponent(`   Component ID type: ${typeof node.componentId}`)
+  
+  // Enhanced detached component detection
+  // A detached instance is when a component instance has lost its connection to the master component
+  // This can happen when the original component is deleted or the instance is "detached" in Figma
+  let isDetached = false
+  
+  if (node.type === 'INSTANCE') {
+    // Method 1: Check if this instance has a valid componentId (not detached)
+    if (!node.componentId) {
+      // No componentId means it's detached
+      isDetached = true
+      logComponent(`   ❌ DETACHED: No componentId found`)
+    } else {
+      // For external library components, be more lenient with componentId validation
+      if (componentType === 'EXTERNAL_INSTANCE') {
+        // External library components might have different componentId patterns
+        // Only mark as detached if componentId is clearly invalid
+        const isValidComponentId = node.componentId && 
+                                  typeof node.componentId === 'string' && 
+                                  node.componentId.length > 0
+        
+        if (!isValidComponentId) {
+          isDetached = true
+          logComponent(`   ❌ DETACHED: Invalid componentId for external library component`)
+        } else {
+          isDetached = false
+          logComponent(`   ✅ NOT DETACHED: Valid componentId for external library component`)
+        }
+      } else {
+        // For local components, use stricter validation
+        // Check if the componentId follows the expected pattern (usually "componentId:versionId")
+        const isValidComponentId = node.componentId && 
+                                  typeof node.componentId === 'string' && 
+                                  node.componentId.length > 0 &&
+                                  node.componentId.includes(':')
+        
+        if (!isValidComponentId) {
+          // Invalid componentId format might indicate detachment
+          isDetached = true
+          logComponent(`   ❌ DETACHED: Invalid componentId format for local component`)
+        } else {
+          // Valid componentId, not detached
+          isDetached = false
+          logComponent(`   ✅ NOT DETACHED: Valid componentId format for local component`)
+        }
+      }
+    }
+  } else if (node.type === 'FRAME' || node.type === 'GROUP') {
+    // Method 2: Check if this FRAME/GROUP might be a detached component
+    // Use heuristic detection for non-INSTANCE nodes that might be detached components
+    const heuristicScore = calculateDetachedHeuristicScore(node)
+    
+    if (heuristicScore >= 0.8) {
+      isDetached = true
+      logComponent(`   ❌ DETACHED: FRAME/GROUP with high component likelihood (score: ${heuristicScore.toFixed(2)})`)
+    } else if (heuristicScore >= 0.6) {
+      // Medium confidence - mark as potentially detached
+      isDetached = true
+      logComponent(`   ⚠️ POTENTIALLY DETACHED: FRAME/GROUP with medium component likelihood (score: ${heuristicScore.toFixed(2)})`)
+    } else {
+      isDetached = false
+      logComponent(`   ✅ NOT DETACHED: FRAME/GROUP with low component likelihood (score: ${heuristicScore.toFixed(2)})`)
+    }
+  } else {
+    // Not an instance or frame/group, so not detached
+    isDetached = false
+    logComponent(`   ✅ NOT DETACHED: Not a component instance or frame/group`)
+  }
+
+  // Check for overwritten properties
+  // We need to detect when someone has changed a variable/token value from its original
+  let hasOverwrittenProperties = false
+  let overwrittenProperties: string[] = []
+  
+  // TEMPORARILY DISABLED: Set to false to avoid false positives while we debug
+  // TODO: Implement proper detection of actual variable overrides
+  hasOverwrittenProperties = false
+  overwrittenProperties = []
+  
+  // Original logic (commented out for now):
+  /*
+  if (node.componentProperties && typeof node.componentProperties === 'object') {
+    for (const [key, value] of Object.entries(node.componentProperties)) {
+      // Check if this is an actual override (not just a default property)
+      if (value !== null && value !== undefined && typeof value === 'object' && 'type' in value) {
+        // For component properties, we need to check if this represents a variable override
+        // Look for properties that have been changed from their original token/variable values
+        
+        // Check if this property has been modified from its original value
+        // This could be detected by checking if the value differs from the component's default
+        // or if it's a hardcoded value instead of a token reference
+        
+        // For now, let's be more conservative and only flag obvious overrides
+        // We'll need to refine this based on the actual Figma API structure
+        const isOverride = checkIfPropertyIsOverridden(key, value, node)
+        if (isOverride) {
+          hasOverwrittenProperties = true
+          overwrittenProperties.push(key)
+        }
+      }
+    }
+  }
+  */
+
+  // Apply the new rules for flagging issues
+  let shouldShowIssues = false
+  
+  if (componentType === 'EXTERNAL_INSTANCE') {
+    // External library components: only flag as issue if detached or properties overwritten
+    shouldShowIssues = isDetached || hasOverwrittenProperties
+    logComponent(`   📋 EXTERNAL LIBRARY: shouldShowIssues = ${shouldShowIssues} (detached: ${isDetached}, overwritten: ${hasOverwrittenProperties})`)
+  } else if (componentType === 'LOCAL_COMPONENT' || componentType === 'LOCAL_INSTANCE') {
+    // Local components: flag as issue if they meet design token analysis checks
+    // For now, we'll assume they should show issues (token analysis will handle the rest)
+    shouldShowIssues = true
+    logComponent(`   📋 LOCAL COMPONENT: shouldShowIssues = true`)
+  } else {
+    // Regular nodes: show issues
+    shouldShowIssues = true
+    logComponent(`   📋 REGULAR NODE: shouldShowIssues = true`)
+  }
+
+  // Debug logging for component issue analysis
+  logComponent(`Component Issue Analysis for "${node.name}" (${componentType}):`, {
+    isDetached,
+    hasOverwrittenProperties,
+    overwrittenProperties,
+    shouldShowIssues,
+    nodeType: node.type,
+    componentId: node.componentId,
+    hasComponentProperties: !!node.componentProperties,
+    componentPropertiesKeys: node.componentProperties ? Object.keys(node.componentProperties) : []
+  })
+  
+  // More comprehensive logging to understand the node structure
+  logComponent(`=== FULL NODE STRUCTURE for "${node.name}" ===`)
+  logComponent('Node type:', node.type)
+  logComponent('Component ID:', node.componentId)
+  logComponent('Component Properties:', node.componentProperties)
+  logComponent('Component Properties Type:', typeof node.componentProperties)
+  logComponent('All node keys:', Object.keys(node))
+  
+  const result = {
+    hasOverwrittenProperties,
+    overwrittenProperties,
+    isDetached,
+    shouldShowIssues
+  }
+  
+  // Cache the result
+  componentIssueCache.set(cacheKey, result);
+  return result
+}
+
+// Helper function to check if a component property has been overridden from its original token value
+function checkIfPropertyIsOverridden(propertyKey: string, propertyValue: any, node: FigmaNode): boolean {
+  // For now, let's be very conservative and only flag obvious cases
+  // We'll need to refine this based on actual Figma API behavior
+  
+  // Check if the property value represents a hardcoded value instead of a token reference
+  if (propertyValue && typeof propertyValue === 'object') {
+    // If it has a 'value' property that looks like a hardcoded value (not a token reference)
+    if ('value' in propertyValue) {
+      const value = propertyValue.value
+      
+      // Check if this looks like a hardcoded value rather than a token reference
+      // Token references typically have specific patterns or are bound to variables
+      
+      // For now, let's assume that if the property exists and has a value,
+      // it might be an override. We'll need to refine this logic based on
+      // the actual Figma API structure and how tokens are represented
+      
+      // This is a placeholder - we need to understand the actual structure
+      // of component properties in the Figma API to properly detect overrides
+      return false // Temporarily return false to avoid false positives
+    }
+  }
+  
+  return false
 }
 
 function traverseDocumentNodes(node: FigmaNode, context: TraversalContext & { styleIdToStyle?: Record<string, any> }, path = "", currentFrame?: FrameInfo): void {
@@ -371,30 +787,80 @@ function traverseDocumentNodes(node: FigmaNode, context: TraversalContext & { st
   context.stats.totalElements++
   const currentPath = path ? `${path} > ${node.name}` : node.name
 
-  // Check if this node is a component instance
-  // In Figma API, component instances have type 'INSTANCE' and may have componentId
+  // Check if this node is a component instance or component definition
   const isComponentInstance = node.type === 'INSTANCE' || node.componentId !== undefined
-  const newIsInsideComponent = context.isInsideComponent || isComponentInstance
-  const newCurrentComponentId = isComponentInstance ? node.id : context.currentComponentId
+  const isComponentDefinition = node.type === 'COMPONENT'
+  const newIsInsideComponent = context.isInsideComponent || isComponentInstance || isComponentDefinition
+  
+  // Track the current component context
+  let newCurrentComponentId = context.currentComponentId
+  let newCurrentComponentName = context.currentComponentName
+  
+  if (isComponentInstance || isComponentDefinition) {
+    newCurrentComponentId = node.id
+    newCurrentComponentName = node.name
+    logComponent(`Component context set: "${node.name}" (type: ${node.type}, componentId: ${node.componentId})`);
+  }
+
+  // Collect component information for usage analysis
+  if (isComponentInstance || isComponentDefinition) {
+    const componentInfo = getComponentType(node, context)
+    const componentId = node.componentId || node.id
+    const componentName = node.componentName || node.name
+    
+    logComponent(`Component detected for collection: "${componentName}" (${componentId}) - Type: ${componentInfo.type}`)
+    
+    if (!context.allComponents.has(componentId)) {
+      context.allComponents.set(componentId, {
+        componentId,
+        componentName,
+        componentType: componentInfo.type,
+        instances: []
+      })
+    }
+    
+    const component = context.allComponents.get(componentId)!
+    
+    // Add this instance to the component
+    if (currentFrame) {
+      const issueAnalysis = analyzeComponentIssues(node, componentInfo.type)
+      
+      component.instances.push({
+        nodeId: node.id,
+        layerName: node.name,
+        frameId: currentFrame.id,
+        frameName: currentFrame.name,
+        framePath: currentFrame.path,
+        figmaUrl: context.figmaUrl,
+        hasOverwrittenProperties: issueAnalysis.hasOverwrittenProperties,
+        overwrittenProperties: issueAnalysis.overwrittenProperties,
+        isDetached: issueAnalysis.isDetached
+      })
+    }
+  }
 
   if (isComponentInstance) {
-    console.log(`Component instance detected: "${node.name}" (type: ${node.type}, componentId: ${node.componentId})`);
+    logComponent(`Component instance detected: "${node.name}" (type: ${node.type}, componentId: ${node.componentId})`);
+  } else if (isComponentDefinition) {
+    logComponent(`Component definition detected: "${node.name}" (type: ${node.type})`);
+  } else if (newIsInsideComponent) {
+    logComponent(`Inside component context: "${node.name}" (parent: ${newCurrentComponentName})`);
   } else if (node.type === 'RECTANGLE' || node.type === 'FRAME' || node.type === 'GROUP') {
     // Check if this might be a detached component (has component-like properties but no componentId)
-    console.log(`Regular node: "${node.name}" (type: ${node.type}, componentId: ${node.componentId || 'none'})`);
+    logComponent(`Regular node: "${node.name}" (type: ${node.type}, componentId: ${node.componentId || 'none'})`);
     
     // Check for any properties that might indicate this was a former component
     if (node.fills && node.fills.length > 0) {
-      console.log(`  - Has fills: ${node.fills.length} fill(s)`);
+      logComponent(`  - Has fills: ${node.fills.length} fill(s)`);
       node.fills.forEach((fill, index) => {
-        console.log(`    Fill ${index}:`, fill);
+        logComponent(`    Fill ${index}:`, fill);
         if (fill.boundVariables) {
-          console.log(`    Fill ${index} boundVariables:`, fill.boundVariables);
+          logComponent(`    Fill ${index} boundVariables:`, fill.boundVariables);
         }
       });
     }
     if (node.boundVariables && Object.keys(node.boundVariables).length > 0) {
-      console.log(`  - Has bound variables:`, node.boundVariables);
+      logComponent(`  - Has bound variables:`, node.boundVariables);
     }
   }
 
@@ -404,7 +870,7 @@ function traverseDocumentNodes(node: FigmaNode, context: TraversalContext & { st
     const pathParts = currentPath.split(' > ')
     // Look for the component name in the path (usually the component instance name)
     // Skip generic layer names
-    const genericLayerNames = /^(Layer|Frame|Group|Rectangle|Text|Button|Input|Card|Modal|Dialog|Header|Footer|Sidebar|Nav|Menu|List|Grid|Container|Wrapper|Box|Div|Span|P|H[1-6]|A|Img|Icon|Logo|Avatar|Badge|Tag|Label|Field|Form|Section|Article|Aside|Main|Outlet|Media area|Instance)$/i
+    const genericLayerNames = /^(Layer|Frame|Group|Rectangle|Text|Button|Input|Card|Modal|Dialog|Header|Footer|Sidebar|Nav|Menu|List|Grid|Container|Wrapper|Box|Div|Span|P|H[1-6]|A|Img|Icon|Logo|Avatar|Badge|Tag|Label|Field|Form|Section|Article|Aside|Main|Outlet|Media area|Instance|Right column|Left column)$/i
     
     // The component name is usually the name of the component instance itself
     if (!genericLayerNames.test(node.name)) {
@@ -419,6 +885,29 @@ function traverseDocumentNodes(node: FigmaNode, context: TraversalContext & { st
         }
       }
     }
+  }
+
+  // Additional check: if we're inside a component but don't have a component name,
+  // try to find the component name from the path
+  if (newIsInsideComponent && !componentName && currentPath.includes(' > ')) {
+    const pathParts = currentPath.split(' > ')
+    // Look for component-like names in the path
+    for (let i = pathParts.length - 1; i >= 0; i--) {
+      const part = pathParts[i]
+      // Skip generic names and look for more specific component names
+      if (!/^(Layer|Frame|Group|Rectangle|Text|Button|Input|Card|Modal|Dialog|Header|Footer|Sidebar|Nav|Menu|List|Grid|Container|Wrapper|Box|Div|Span|P|H[1-6]|A|Img|Icon|Logo|Avatar|Badge|Tag|Label|Field|Form|Section|Article|Aside|Main|Outlet|Media area|Instance|Right column|Left column)$/i.test(part) &&
+          !part.match(/^Component \d+:\d+$/) && 
+          !part.match(/^\d+:\d+$/) &&
+          part.length > 2) {
+        componentName = part
+        break
+      }
+    }
+  }
+
+  // If we're inside a component context, use the parent component name
+  if (newIsInsideComponent && !componentName && newCurrentComponentName) {
+    componentName = newCurrentComponentName
   }
 
   const isParentFrame = context.parentFrames.some((frame) => frame.id === node.id)
@@ -437,6 +926,7 @@ function traverseDocumentNodes(node: FigmaNode, context: TraversalContext & { st
     ...context,
     isInsideComponent: newIsInsideComponent,
     currentComponentId: newCurrentComponentId,
+    currentComponentName: newCurrentComponentName,
   }
 
   // Update the node with component name if we found one
@@ -469,14 +959,10 @@ function traverseDocumentNodes(node: FigmaNode, context: TraversalContext & { st
     }
   }
 
+  // Recursively process child nodes
   if (node.children) {
     node.children.forEach((child) => {
-      // Pass the component name context to child nodes
-      const childWithComponentContext = {
-        ...child,
-        componentName: componentName || child.componentName,
-      }
-      traverseDocumentNodes(childWithComponentContext, childContext, currentPath, currentFrame)
+      traverseDocumentNodes(child, childContext, currentPath, currentFrame)
     })
   }
 }
@@ -518,10 +1004,23 @@ function extractNodeValues(
   let hasAnyTokenizedProperties = false
   let hardcodedPropertiesFound = 0
 
-  console.log(`\n=== Processing node: "${node.name}" (type: ${node.type}) ===`);
-  console.log(`  - Path: ${currentPath}`);
-  console.log(`  - Component ID: ${node.componentId || 'none'}`);
-  console.log(`  - Is inside component: ${context?.isInsideComponent || false}`);
+  logDebug(`\n=== Processing node: "${node.name}" (type: ${node.type}) ===`);
+  logDebug(`  - Path: ${currentPath}`);
+  logDebug(`  - Component ID: ${node.componentId || 'none'}`);
+  logDebug(`  - Is inside component: ${context?.isInsideComponent || false}`);
+
+  // Determine component type and whether to show issues
+  const componentInfo = getComponentType(node, context)
+  logDebug(`  - Component type: ${componentInfo.type}, shouldShowIssues: ${componentInfo.shouldShowIssues}`);
+
+  // If this is an external library instance, skip adding hardcoded values
+  if (!componentInfo.shouldShowIssues) {
+    logDebug(`  - Skipping external library instance "${node.name}" - no issues to show`);
+    return {
+      hasAnyTokenizedProperties: true, // Mark as tokenized to avoid counting as hardcoded
+      hardcodedPropertiesFound: 0
+    }
+  }
 
   // Extract colors from fills and strokes
   const colorTokenizationInfo = extractColorsFromNode(node, currentPath, currentFrame, hardcodedValues, styleIdToStyle, context)
@@ -533,12 +1032,14 @@ function extractNodeValues(
     { value: node.itemSpacing, name: "itemSpacing", boundVariable: node.boundVariables?.itemSpacing },
   ]
   spacingProperties.forEach(({ value, boundVariable, name }) => {
-    if (value !== undefined && boundVariable === undefined && node.boundVariables?.[name] === undefined) {
-      console.log(`Adding hardcoded spacing: ${value}px for "${node.name}"`);
+    const hasTokenizedProps = hasTokenizedProperties(node, context)
+    
+    if (value !== undefined && boundVariable === undefined && node.boundVariables?.[name] === undefined && !hasTokenizedProps) {
+      logDebug(`Adding hardcoded spacing: ${value}px for "${node.name}"`);
       addHardcodedValue(`${value}px`, "spacing", currentPath, currentFrame, hardcodedValues, node.id, node, context)
       hardcodedPropertiesFound++
-    } else if (boundVariable !== undefined || node.boundVariables?.[name] !== undefined) {
-      console.log(`Skipping spacing for "${node.name}" - has tokenized properties`);
+    } else if (boundVariable !== undefined || node.boundVariables?.[name] !== undefined || hasTokenizedProps) {
+      logDebug(`Skipping spacing for "${node.name}" - has tokenized properties or is component instance`);
       hasAnyTokenizedProperties = true
     }
   })
@@ -551,12 +1052,14 @@ function extractNodeValues(
     { value: node.paddingBottom, name: "paddingBottom", boundVariable: node.boundVariables?.paddingBottom },
   ]
   paddingProperties.forEach(({ value, boundVariable, name }) => {
-    if (value !== undefined && boundVariable === undefined && node.boundVariables?.[name] === undefined) {
-      console.log(`Adding hardcoded padding: ${value}px for "${node.name}"`);
+    const hasTokenizedProps = hasTokenizedProperties(node, context)
+    
+    if (value !== undefined && boundVariable === undefined && node.boundVariables?.[name] === undefined && !hasTokenizedProps) {
+      logDebug(`Adding hardcoded padding: ${value}px for "${node.name}"`);
       addHardcodedValue(`${value}px`, "padding", currentPath, currentFrame, hardcodedValues, node.id, node, context)
       hardcodedPropertiesFound++
-    } else if (boundVariable !== undefined || node.boundVariables?.[name] !== undefined) {
-      console.log(`Skipping padding for "${node.name}" - has tokenized properties`);
+    } else if (boundVariable !== undefined || node.boundVariables?.[name] !== undefined || hasTokenizedProps) {
+      logDebug(`Skipping padding for "${node.name}" - has tokenized properties or is component instance`);
       hasAnyTokenizedProperties = true
     }
   })
@@ -564,17 +1067,18 @@ function extractNodeValues(
   // Extract border radius (check for bound variables individually)
   if (node.cornerRadius !== undefined) {
     const hasCornerRadiusVariable = node.boundVariables?.cornerRadius !== undefined
+    const hasTokenizedProps = hasTokenizedProperties(node, context)
     
-    console.log(`Border radius check for "${node.name}": cornerRadius=${node.cornerRadius}, hasVariable=${hasCornerRadiusVariable}`);
-    console.log(`  - boundVariables:`, node.boundVariables);
-    console.log(`  - node.boundVariables?.cornerRadius:`, node.boundVariables?.cornerRadius);
+    logDebug(`Border radius check for "${node.name}": cornerRadius=${node.cornerRadius}, hasVariable=${hasCornerRadiusVariable}`);
+    logDebug(`  - boundVariables:`, node.boundVariables);
+    logDebug(`  - node.boundVariables?.cornerRadius:`, node.boundVariables?.cornerRadius);
     
-    if (!hasCornerRadiusVariable && node.boundVariables?.cornerRadius === undefined) {
-      console.log(`Adding hardcoded border radius: ${node.cornerRadius}px for "${node.name}"`);
+    if (!hasCornerRadiusVariable && !hasTokenizedProps) {
+      logDebug(`Adding hardcoded border radius: ${node.cornerRadius}px for "${node.name}"`);
       addHardcodedValue(`${node.cornerRadius}px`, "border-radius", currentPath, currentFrame, hardcodedValues, node.id, node, context)
       hardcodedPropertiesFound++
     } else {
-      console.log(`Skipping border radius for "${node.name}" - has tokenized properties`);
+      logDebug(`Skipping border radius for "${node.name}" - has tokenized properties or is component instance`);
       hasAnyTokenizedProperties = true
     }
   }
@@ -587,9 +1091,12 @@ function extractNodeValues(
     hardcodedPropertiesFound += typographyTokenizationInfo.hardcodedPropertiesFound || 0
   }
 
-  console.log(`=== Finished processing "${node.name}" - hasAnyTokenizedProperties: ${hasAnyTokenizedProperties}, hardcodedPropertiesFound: ${hardcodedPropertiesFound} ===\n`);
+  logDebug(`=== Finished processing "${node.name}" - hasAnyTokenizedProperties: ${hasAnyTokenizedProperties}, hardcodedPropertiesFound: ${hardcodedPropertiesFound} ===\n`);
 
-  return { hasAnyTokenizedProperties, hardcodedPropertiesFound }
+  return {
+    hasAnyTokenizedProperties,
+    hardcodedPropertiesFound,
+  }
 }
 
 interface ColorTokenizationInfo {
@@ -608,23 +1115,23 @@ function extractColorsFromNode(
   let hasAnyTokenizedProperties = false
   let hardcodedPropertiesFound = 0
 
-  console.log(`Color extraction for "${node.name}":`);
-  console.log(`  - Node type: ${node.type}`);
-  console.log(`  - Component ID: ${node.componentId || 'none'}`);
-  console.log(`  - Is inside component: ${context?.isInsideComponent || false}`);
-  console.log(`  - fills:`, node.fills);
-  console.log(`  - strokes:`, node.strokes);
-  console.log(`  - boundVariables:`, node.boundVariables);
+  logDebug(`Color extraction for "${node.name}":`);
+  logDebug(`  - Node type: ${node.type}`);
+  logDebug(`  - Component ID: ${node.componentId || 'none'}`);
+  logDebug(`  - Is inside component: ${context?.isInsideComponent || false}`);
+  logDebug(`  - fills:`, node.fills);
+  logDebug(`  - strokes:`, node.strokes);
+  logDebug(`  - boundVariables:`, node.boundVariables);
 
   // Special debugging for detached components
   if (node.type === 'RECTANGLE' || node.type === 'FRAME' || node.type === 'GROUP') {
-    console.log(`  - Potential detached component detected`);
-    console.log(`  - Has component-like properties but no componentId`);
+    logDebug(`  - Potential detached component detected`);
+    logDebug(`  - Has component-like properties but no componentId`);
   }
 
   // If node has any style applied, skip color extraction (styles override local colors)
   if (hasNodeOrParentStyles(node, styleIdToStyle, context)) {
-    console.log(`Skipping color extraction for "${node.name}" - has styles applied`);
+    logDebug(`Skipping color extraction for "${node.name}" - has styles applied`);
     return { hasAnyTokenizedProperties: true, hardcodedPropertiesFound: 0 };
   }
 
@@ -639,60 +1146,60 @@ function extractColorsFromNode(
     const nodeFillBound = node.boundVariables?.fills !== undefined;
     
     const result = fillBound || nodeColorBound || nodeFillBound;
-    console.log(`  - isColorBound check for "${node.name}":`);
-    console.log(`    fillBound=${fillBound}, nodeColorBound=${nodeColorBound}, nodeFillBound=${nodeFillBound}`);
-    console.log(`    fill.boundVariables:`, fillOrStroke.boundVariables);
-    console.log(`    node.boundVariables:`, node.boundVariables);
-    console.log(`    result=${result}`);
+    logDebug(`  - isColorBound check for "${node.name}":`);
+    logDebug(`    fillBound=${fillBound}, nodeColorBound=${nodeColorBound}, nodeFillBound=${nodeFillBound}`);
+    logDebug(`    fill.boundVariables:`, fillOrStroke.boundVariables);
+    logDebug(`    node.boundVariables:`, node.boundVariables);
+    logDebug(`    result=${result}`);
     return result;
   }
 
   // Process fills - distinguish from strokes
   if (node.fills && node.fills.length > 0) {
-    console.log(`  - Processing ${node.fills.length} fills`);
+    logDebug(`  - Processing ${node.fills.length} fills`);
     node.fills.forEach((fill, index) => {
-      console.log(`  - Fill ${index}:`, fill);
+      logDebug(`  - Fill ${index}:`, fill);
       if (fill.type === "SOLID" && fill.color && (fill.visible !== false)) {
-        console.log(`  - Processing solid fill ${index} with color:`, fill.color);
+        logDebug(`  - Processing solid fill ${index} with color:`, fill.color);
         if (!isColorBound(fill)) {
           const color = rgbToHex(fill.color)
-          console.log(`  - Adding hardcoded fill: ${color} for "${node.name}"`);
+          logDebug(`  - Adding hardcoded fill: ${color} for "${node.name}"`);
           addHardcodedValue(color, "fill", currentPath, currentFrame, hardcodedValues, node.id, node, context)
           hardcodedPropertiesFound++
         } else {
-          console.log(`  - Skipping fill ${index} for "${node.name}" - has tokenized properties`);
+          logDebug(`  - Skipping fill ${index} for "${node.name}" - has tokenized properties`);
           hasAnyTokenizedProperties = true
         }
       } else {
-        console.log(`  - Skipping fill ${index} - not a visible solid fill`);
+        logDebug(`  - Skipping fill ${index} - not a visible solid fill`);
       }
     })
   } else {
-    console.log(`  - No fills to process`);
+    logDebug(`  - No fills to process`);
   }
 
   // Process strokes - distinguish from fills
   if (node.strokes && node.strokes.length > 0 && (node as any).strokeWeight > 0) {
-    console.log(`  - Processing ${node.strokes.length} strokes`);
+    logDebug(`  - Processing ${node.strokes.length} strokes`);
     node.strokes.forEach((stroke, index) => {
-      console.log(`  - Stroke ${index}:`, stroke);
+      logDebug(`  - Stroke ${index}:`, stroke);
       if (stroke.type === "SOLID" && stroke.color && (stroke.visible !== false)) {
-        console.log(`  - Processing solid stroke ${index} with color:`, stroke.color);
+        logDebug(`  - Processing solid stroke ${index} with color:`, stroke.color);
         if (!isColorBound(stroke)) {
           const color = rgbToHex(stroke.color)
-          console.log(`  - Adding hardcoded stroke: ${color} for "${node.name}"`);
+          logDebug(`  - Adding hardcoded stroke: ${color} for "${node.name}"`);
           addHardcodedValue(color, "stroke", currentPath, currentFrame, hardcodedValues, node.id, node, context)
           hardcodedPropertiesFound++
         } else {
-          console.log(`  - Skipping stroke ${index} for "${node.name}" - has tokenized properties`);
+          logDebug(`  - Skipping stroke ${index} for "${node.name}" - has tokenized properties`);
           hasAnyTokenizedProperties = true
         }
       } else {
-        console.log(`  - Skipping stroke ${index} - not a visible solid stroke`);
+        logDebug(`  - Skipping stroke ${index} - not a visible solid stroke`);
       }
     })
   } else {
-    console.log(`  - No strokes to process`);
+    logDebug(`  - No strokes to process`);
   }
 
   return { hasAnyTokenizedProperties, hardcodedPropertiesFound }
@@ -715,22 +1222,31 @@ function addHardcodedValue(
 ): void {
   const existingOccurrence = hardcodedValues.find((v) => v.value === value && v.type === type)
 
+  // Determine component type and whether to show issues
+  const componentInfo = node ? getComponentType(node, context) : {
+    type: 'REGULAR_NODE' as const,
+    shouldShowIssues: true,
+    isComponentInstance: false
+  }
+
   // Determine if this is a component instance based on context or node properties
-  const isComponentInstance = context?.isInsideComponent || 
-    node?.type === 'COMPONENT' || 
-    node?.type === 'INSTANCE' || 
-    node?.componentId !== undefined
+  const isComponentInstance = componentInfo.isComponentInstance
+
+  // Use the component name from context if available, otherwise from node
+  const componentName = context?.currentComponentName || node?.componentName
 
   const locationData = {
     path: location,
     nodeId: nodeId,
+    componentId: context?.currentComponentId || node?.componentId, // Store componentId separately
     frameId: currentFrame?.id,
     frameName: currentFrame?.name,
     framePath: currentFrame?.path,
     // Component-related information
     isComponentInstance: isComponentInstance,
-    componentId: context?.currentComponentId || node?.componentId,
-    componentName: node?.componentName,
+    componentName: componentName,
+    componentType: componentInfo.type,
+    shouldShowIssues: componentInfo.shouldShowIssues,
   }
 
   if (existingOccurrence) {
@@ -758,6 +1274,8 @@ function convertToHardcodedValuesFormat(hardcodedValues: HardcodedValue[]) {
     isComponentInstances: occurrence.locations.map((loc) => loc.isComponentInstance),
     componentIds: occurrence.locations.map((loc) => loc.componentId),
     componentNames: occurrence.locations.map((loc) => loc.componentName),
+    componentTypes: occurrence.locations.map((loc) => loc.componentType),
+    shouldShowIssues: occurrence.locations.map((loc) => loc.shouldShowIssues),
   }))
 }
 
@@ -797,20 +1315,36 @@ function enhanceFrameAnalysesWithRecommendations(
     frameAnalysis.rawValues = Array.from(uniqueValues.values()).map((occurrence) => {
       const recommendations = getRecommendationsForValue(occurrence.value, occurrence.type, resolvedTokens)
 
-      // Filter locations to only include those that belong to this frame
-      const frameLocations = occurrence.locations.filter(loc => loc.frameId === frameId)
+      // Filter locations to only include those that belong to this frame AND should show issues
+      const frameLocations = occurrence.locations.filter(loc => 
+        loc.frameId === frameId && (loc.shouldShowIssues !== false) // Default to true if not specified
+      )
+      
+      // If no locations should show issues, skip this value entirely
+      if (frameLocations.length === 0) {
+        return null
+      }
       
       return {
         type: occurrence.type,
         value: occurrence.value,
-        count: frameLocations.length, // Count only frame-specific occurrences
+        count: frameLocations.length, // Count only frame-specific occurrences that should show issues
         locations: frameLocations.map((loc) => loc.path),
         nodeIds: frameLocations.map((loc) => loc.nodeId).filter((id): id is string => id !== undefined),
-        layerNames: frameLocations.map((loc) => loc.path.split(' > ').pop() || 'Unknown Layer'), // Extract layer name from path
+        layerNames: frameLocations.map((loc) => {
+          // If we're inside a component context, show the component name instead of just the layer name
+          if (loc.componentName && loc.isComponentInstance) {
+            return loc.componentName
+          }
+          // Otherwise, extract the layer name from the path
+          return loc.path.split(' > ').pop() || 'Unknown Layer'
+        }),
         // Component information
         isComponentInstances: frameLocations.map((loc) => loc.isComponentInstance || false),
         componentIds: frameLocations.map((loc) => loc.componentId),
         componentNames: frameLocations.map((loc) => loc.componentName),
+        componentTypes: frameLocations.map((loc) => loc.componentType || 'REGULAR_NODE'),
+        shouldShowIssues: frameLocations.map((loc) => loc.shouldShowIssues !== false), // Default to true
         recommendations: recommendations.map((rec) => ({
           tokenName: rec.tokenName,
           tokenValue: rec.tokenValue,
@@ -821,7 +1355,7 @@ function enhanceFrameAnalysesWithRecommendations(
           fullTokenPath: rec.fullTokenPath,
         })),
       }
-    })
+    }).filter((item): item is NonNullable<typeof item> => item !== null) // Remove null entries with proper typing
 
     // Calculate total issues (total occurrences) for this frame
     const totalFrameIssues = frameValues.reduce((sum, occurrence) => {
@@ -838,4 +1372,244 @@ function enhanceFrameAnalysesWithRecommendations(
       ? ((frameAnalysis.tokenizedProperties || 0) / frameAnalysis.totalElements) * 100 
       : 0
   })
+}
+
+// Enhanced detached component detection
+export interface DetachedComponentInfo {
+  nodeId: string
+  nodeName: string
+  nodeType: string
+  frameId?: string
+  frameName?: string
+  framePath?: string
+  figmaUrl?: string
+  confidence: 'high' | 'medium' | 'low'
+  detectionMethod: 'api' | 'heuristic'
+  reason: string
+  componentName?: string
+  hasComponentProperties?: boolean
+  hasBoundVariables?: boolean
+  hasComponentStyles?: boolean
+}
+
+/**
+ * Detect detached components from a Figma file using the API and heuristics
+ * @param document - The Figma document node
+ * @param figmaUrl - The Figma file URL
+ * @param knownComponentNames - Optional set of known component names for heuristic detection
+ * @returns Array of suspected detached components
+ */
+export function detectDetachedComponents(
+  document: FigmaNode,
+  figmaUrl: string,
+  knownComponentNames?: Set<string>
+): DetachedComponentInfo[] {
+  const detachedComponents: DetachedComponentInfo[] = []
+  const componentDefinitions = new Map<string, string>() // componentId -> componentName
+  const componentInstances = new Map<string, string>() // nodeId -> componentId
+  
+  // First pass: collect all component definitions and instances
+  function collectComponentInfo(node: FigmaNode, path = ""): void {
+    if (node.visible === false) return
+    
+    const currentPath = path ? `${path} > ${node.name}` : node.name
+    
+    // Collect component definitions
+    if (node.type === 'COMPONENT') {
+      componentDefinitions.set(node.id, node.name)
+      logComponent(`Component definition found: "${node.name}" (${node.id})`)
+    }
+    
+    // Collect component instances
+    if (node.type === 'INSTANCE' && node.componentId) {
+      componentInstances.set(node.id, node.componentId)
+      logComponent(`Component instance found: "${node.name}" (${node.id}) -> componentId: ${node.componentId}`)
+    }
+    
+    // Recursively process children
+    if (node.children) {
+      node.children.forEach(child => collectComponentInfo(child, currentPath))
+    }
+  }
+  
+  collectComponentInfo(document)
+  
+  // Second pass: detect detached components
+  function detectDetachedInNode(node: FigmaNode, path = "", currentFrame?: FrameInfo): void {
+    if (node.visible === false) return
+    
+    const currentPath = path ? `${path} > ${node.name}` : node.name
+    
+    // Method 1: API-based detection - Check for INSTANCE nodes without componentId
+    if (node.type === 'INSTANCE') {
+      if (!node.componentId) {
+        detachedComponents.push({
+          nodeId: node.id,
+          nodeName: node.name,
+          nodeType: node.type,
+          frameId: currentFrame?.id,
+          frameName: currentFrame?.name,
+          framePath: currentFrame?.path,
+          figmaUrl: figmaUrl,
+          confidence: 'high',
+          detectionMethod: 'api',
+          reason: 'INSTANCE node without componentId',
+          componentName: node.componentName,
+          hasComponentProperties: !!node.componentProperties,
+          hasBoundVariables: !!(node.boundVariables && Object.keys(node.boundVariables).length > 0),
+          hasComponentStyles: !!(node.styles && Object.keys(node.styles).length > 0)
+        })
+        logComponent(`🔍 HIGH CONFIDENCE DETACHED: "${node.name}" - INSTANCE without componentId`)
+      } else {
+        // Check if the componentId references a non-existent component
+        if (!componentDefinitions.has(node.componentId) && !componentInstances.has(node.id)) {
+          detachedComponents.push({
+            nodeId: node.id,
+            nodeName: node.name,
+            nodeType: node.type,
+            frameId: currentFrame?.id,
+            frameName: currentFrame?.name,
+            framePath: currentFrame?.path,
+            figmaUrl: figmaUrl,
+            confidence: 'high',
+            detectionMethod: 'api',
+            reason: `INSTANCE with invalid componentId: ${node.componentId}`,
+            componentName: node.componentName,
+            hasComponentProperties: !!node.componentProperties,
+            hasBoundVariables: !!(node.boundVariables && Object.keys(node.boundVariables).length > 0),
+            hasComponentStyles: !!(node.styles && Object.keys(node.styles).length > 0)
+          })
+          logComponent(`🔍 HIGH CONFIDENCE DETACHED: "${node.name}" - INSTANCE with invalid componentId: ${node.componentId}`)
+        }
+      }
+    }
+    
+    // Method 2: Heuristic detection - Check for FRAME/GROUP nodes that look like detached components
+    if ((node.type === 'FRAME' || node.type === 'GROUP') && !node.componentId) {
+      const heuristicScore = calculateDetachedHeuristicScore(node, knownComponentNames)
+      
+      if (heuristicScore >= 0.7) {
+        detachedComponents.push({
+          nodeId: node.id,
+          nodeName: node.name,
+          nodeType: node.type,
+          frameId: currentFrame?.id,
+          frameName: currentFrame?.name,
+          framePath: currentFrame?.path,
+          figmaUrl: figmaUrl,
+          confidence: heuristicScore >= 0.9 ? 'high' : heuristicScore >= 0.8 ? 'medium' : 'low',
+          detectionMethod: 'heuristic',
+          reason: `FRAME/GROUP with component-like properties (score: ${heuristicScore.toFixed(2)})`,
+          componentName: node.componentName,
+          hasComponentProperties: !!node.componentProperties,
+          hasBoundVariables: !!(node.boundVariables && Object.keys(node.boundVariables).length > 0),
+          hasComponentStyles: !!(node.styles && Object.keys(node.styles).length > 0)
+        })
+        logComponent(`🔍 HEURISTIC DETACHED: "${node.name}" - Score: ${heuristicScore.toFixed(2)}`)
+      }
+    }
+    
+    // Recursively process children
+    if (node.children) {
+      node.children.forEach(child => detectDetachedInNode(child, currentPath, currentFrame))
+    }
+  }
+  
+  detectDetachedInNode(document)
+  
+  logComponent(`Detached component detection complete. Found ${detachedComponents.length} suspected detached components.`)
+  return detachedComponents
+}
+
+/**
+ * Calculate a heuristic score for whether a node might be a detached component
+ * @param node - The node to analyze
+ * @param knownComponentNames - Optional set of known component names
+ * @returns Score between 0 and 1, where 1 is most likely to be detached
+ */
+function calculateDetachedHeuristicScore(node: FigmaNode, knownComponentNames?: Set<string>): number {
+  let score = 0
+  let totalChecks = 0
+  
+  // Check 1: Name matches known component patterns
+  if (knownComponentNames && knownComponentNames.has(node.name)) {
+    score += 0.4
+    logComponent(`  Heuristic: Name matches known component "${node.name}" (+0.4)`)
+  }
+  totalChecks++
+  
+  // Check 2: Name contains component-like keywords
+  const componentKeywords = /^(button|input|card|modal|dialog|header|footer|sidebar|nav|menu|list|grid|container|wrapper|box|avatar|badge|tag|label|field|form|section|article|aside|main|outlet|media|instance|component)/i
+  if (componentKeywords.test(node.name)) {
+    score += 0.2
+    logComponent(`  Heuristic: Name contains component keywords "${node.name}" (+0.2)`)
+  }
+  totalChecks++
+  
+  // Check 3: Has component properties
+  if (node.componentProperties && Object.keys(node.componentProperties).length > 0) {
+    score += 0.3
+    logComponent(`  Heuristic: Has component properties (+0.3)`)
+  }
+  totalChecks++
+  
+  // Check 4: Has bound variables (indicates it was connected to design tokens)
+  if (node.boundVariables && Object.keys(node.boundVariables).length > 0) {
+    score += 0.25
+    logComponent(`  Heuristic: Has bound variables (+0.25)`)
+  }
+  totalChecks++
+  
+  // Check 5: Has component styles
+  if (node.styles && Object.keys(node.styles).length > 0) {
+    score += 0.15
+    logComponent(`  Heuristic: Has component styles (+0.15)`)
+  }
+  totalChecks++
+  
+  // Check 6: Has fills with bound variables
+  if (node.fills && node.fills.some(fill => fill.boundVariables && Object.keys(fill.boundVariables).length > 0)) {
+    score += 0.2
+    logComponent(`  Heuristic: Has fills with bound variables (+0.2)`)
+  }
+  totalChecks++
+  
+  // Check 7: Has strokes with bound variables
+  if (node.strokes && node.strokes.some(stroke => stroke.boundVariables && Object.keys(stroke.boundVariables).length > 0)) {
+    score += 0.2
+    logComponent(`  Heuristic: Has strokes with bound variables (+0.2)`)
+  }
+  totalChecks++
+  
+  // Check 8: Complex structure (multiple children with consistent styling)
+  if (node.children && node.children.length > 2) {
+    const hasConsistentStyling = node.children.some(child => 
+      child.boundVariables && Object.keys(child.boundVariables).length > 0
+    )
+    if (hasConsistentStyling) {
+      score += 0.1
+      logComponent(`  Heuristic: Complex structure with consistent styling (+0.1)`)
+    }
+  }
+  totalChecks++
+  
+  // Check 9: Name follows component naming conventions
+  const componentNamingPatterns = [
+    /^[A-Z][a-zA-Z0-9]*$/, // PascalCase
+    /^[a-z][a-zA-Z0-9]*$/, // camelCase
+    /^[A-Z][a-zA-Z0-9]*\s*[A-Z][a-zA-Z0-9]*$/, // PascalCase with spaces
+  ]
+  
+  const matchesNamingPattern = componentNamingPatterns.some(pattern => pattern.test(node.name))
+  if (matchesNamingPattern && !/^(Layer|Frame|Group|Rectangle|Text)$/i.test(node.name)) {
+    score += 0.1
+    logComponent(`  Heuristic: Follows component naming conventions "${node.name}" (+0.1)`)
+  }
+  totalChecks++
+  
+  // Normalize score to 0-1 range
+  const normalizedScore = Math.min(score, 1.0)
+  
+  logComponent(`  Final heuristic score for "${node.name}": ${normalizedScore.toFixed(2)}`)
+  return normalizedScore
 }
