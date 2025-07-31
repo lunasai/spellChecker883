@@ -532,13 +532,18 @@ function OccurrencesList({
             displayText = `${componentName} (${layerName})`
           }
           
+          // Truncate display text if it's too long
+          if (displayText.length > 50) {
+            displayText = displayText.substring(0, 47) + '...'
+          }
+          
           const nodeUrl = componentId 
             ? generateFigmaComponentUrl(figmaUrl, componentId)
             : generateFigmaNodeUrl(figmaUrl, nodeId)
 
           return (
             <Button
-              key={nodeId}
+              key={`${nodeId}-${index}`}
               variant="outline"
               size="sm"
               className="h-8 text-xs"

@@ -65,7 +65,12 @@ export default function DesignTokenAuditTool() {
                   <div className="mb-8">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h2 className="text-2xl font-bold text-gray-900">Analysis</h2>
+                        <h2 className="text-2xl font-bold text-gray-900">
+                          {results.figmaAnalysis.rootNodeType ? 
+                            `${results.figmaAnalysis.rootNodeType.charAt(0).toUpperCase() + results.figmaAnalysis.rootNodeType.slice(1).toLowerCase()} Analysis` : 
+                            'Analysis'
+                          }
+                        </h2>
                         <p className="text-gray-600 mt-1">Choose your analysis type</p>
                       </div>
                       <div className="flex gap-2">
@@ -186,9 +191,9 @@ function OverviewCard({ results }: { results: AnalysisResult }) {
         <CardTitle className="text-xl font-semibold text-gray-900">Overview</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6 p-6">
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-3 gap-6">
           {/* Left Column - Tokenization Overview with Stacked Bar Charts */}
-          <div className="space-y-6">
+          <div className="col-span-2 space-y-6">
             {/* Main percentage with enhanced styling */}
             <div className="text-center">
               <div className="text-6xl font-bold bg-gradient-to-r from-green-600 to-green-700 bg-clip-text text-transparent mb-3">
@@ -269,7 +274,7 @@ function OverviewCard({ results }: { results: AnalysisResult }) {
           </div>
 
           {/* Right Column - Issue Categories */}
-          <div>
+          <div className="col-span-1">
             {allIssueCategories.length > 0 ? (
               <div>
                 <div className="flex items-center justify-between mb-3">
@@ -295,31 +300,24 @@ function OverviewCard({ results }: { results: AnalysisResult }) {
                     return (
                       <div 
                         key={category} 
-                        className="flex items-center justify-between p-2.5 rounded-md border hover:bg-opacity-75 transition-colors duration-150"
-                        style={{ 
-                          backgroundColor: `${colors.light}80`,
-                          borderColor: colors.border
-                        }}
+                        className="flex items-center justify-between py-1.5 rounded-md hover:bg-gray-50 transition-colors duration-150"
                       >
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-2">
                           <div 
-                            className="w-6 h-6 rounded-md bg-white border flex items-center justify-center text-xs"
-                            style={{ borderColor: colors.border }}
+                            className="w-5 h-5 rounded-md bg-gray-100 flex items-center justify-center text-xs"
                           >
                             {icon}
                           </div>
                           <div>
                             <div 
-                              className="text-sm font-medium capitalize"
-                              style={{ color: colors.text }}
+                              className="text-sm font-medium capitalize text-gray-700"
                             >
                               {category.replace('-', ' ')}
                             </div>
                           </div>
                         </div>
                         <div 
-                          className="text-sm font-semibold"
-                          style={{ color: colors.text }}
+                          className="text-sm font-semibold text-gray-700"
                         >
                           {count}
                         </div>

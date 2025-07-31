@@ -8,8 +8,8 @@ import axios from "axios"
 // Set these to true when you need detailed debugging information
 // DEBUG_MODE: Controls detailed node processing logs
 // LOG_COMPONENT_ANALYSIS: Controls component analysis logs
-const DEBUG_MODE = false; // Set to true for detailed debugging
-const LOG_COMPONENT_ANALYSIS = false; // Set to true to see component analysis details
+const DEBUG_MODE = true; // Set to true for detailed debugging
+const LOG_COMPONENT_ANALYSIS = true; // Set to true to see component analysis details
 
 function logDebug(message: string, ...args: any[]) {
   if (DEBUG_MODE) {
@@ -324,6 +324,12 @@ export function analyzeFigmaFileByFrames(
   }
 
   const parentFrames = findParentFrames(document)
+  logDebug(`Found ${parentFrames.length} parent frames for analysis`)
+  console.log(`🔍 DEBUG: Found ${parentFrames.length} parent frames for analysis`)
+  parentFrames.forEach((frame, index) => {
+    console.log(`🔍 DEBUG: Frame ${index + 1}: "${frame.name}" (${frame.id})`)
+  })
+  
   const context = {
     hardcodedValues,
     frameAnalyses,
@@ -361,13 +367,21 @@ export function analyzeFigmaFileByFrames(
     enhanceFrameAnalysesWithRecommendations(frameAnalyses, hardcodedValues, resolvedTokens)
   }
 
+  const frameAnalysesArray = Array.from(frameAnalyses.values())
+  logDebug(`Analysis complete: ${frameAnalysesArray.length} frame analyses created`)
+  console.log(`🔍 DEBUG: Analysis complete: ${frameAnalysesArray.length} frame analyses created`)
+  frameAnalysesArray.forEach((frameAnalysis, index) => {
+    console.log(`🔍 DEBUG: Frame Analysis ${index + 1}: "${frameAnalysis.frameName}" (${frameAnalysis.frameId}) - ${frameAnalysis.rawValues.length} raw values`)
+  })
+  
   return {
     hardcodedValues: hardcodedValuesFormatted,
-    frameAnalyses: Array.from(frameAnalyses.values()),
+    frameAnalyses: frameAnalysesArray,
     totalElements: stats.totalElements,
     tokenizedProperties: stats.tokenizedProperties,
     allComponents: Array.from(context.allComponents.values()),
     detachedComponents: detachedComponents,
+    rootNodeType: document.type, // Include the root node type
   }
 }
 
@@ -375,17 +389,43 @@ function findParentFrames(document: FigmaNode): FigmaNode[] {
   const parentFrames: FigmaNode[] = []
 
   function searchForFrames(node: FigmaNode, isTopLevel = true): void {
-    if (node.type === "FRAME" && !isTopLevel) {
+    console.log(`🔍 DEBUG: Searching node: "${node.name}" (${node.id}) - type: ${node.type} - isTopLevel: ${isTopLevel}`)
+    
+    // For root document/canvas/component_set, look for frames at the first level of children
+    // For other nodes, only include meaningful top-level frames and components
+    if (node.type === "DOCUMENT" || node.type === "CANVAS" || node.type === "COMPONENT_SET") {
+      console.log(`🔍 DEBUG: Processing ${node.type} node with ${node.children?.length || 0} children`)
+      // When processing the root document/canvas/component_set, look for frames in its immediate children
+      if (node.children) {
+        node.children.forEach((child, index) => {
+          console.log(`🔍 DEBUG: ${node.type} child ${index}: "${child.name}" (${child.id}) - type: ${child.type}`)
+          if (child.type === "FRAME" || child.type === "COMPONENT") {
+            parentFrames.push(child)
+            logDebug(`Found ${node.type.toLowerCase()}-level ${child.type.toLowerCase()}: "${child.name}" (${child.id})`)
+            console.log(`🔍 DEBUG: Found ${node.type.toLowerCase()}-level ${child.type.toLowerCase()}: "${child.name}" (${child.id})`)
+          }
+          // Continue searching deeper for any additional frames
+          if (child.children) {
+            child.children.forEach((grandchild) => searchForFrames(grandchild, false))
+          }
+        })
+      }
+    } else if ((node.type === "FRAME" || node.type === "COMPONENT") && isTopLevel) {
+      // For non-document/canvas/component_set nodes, only include meaningful top-level frames and components
       parentFrames.push(node)
-      return
+      logDebug(`Found top-level ${node.type.toLowerCase()}: "${node.name}" (${node.id})`)
+      console.log(`🔍 DEBUG: Found top-level ${node.type.toLowerCase()}: "${node.name}" (${node.id})`)
     }
 
-    if (node.children) {
+    // Continue searching children for nested frames, but don't add them as parent frames
+    if (node.children && node.type !== "DOCUMENT" && node.type !== "CANVAS" && node.type !== "COMPONENT_SET") {
       node.children.forEach((child) => searchForFrames(child, false))
     }
   }
 
   searchForFrames(document)
+  logDebug(`Total frames found: ${parentFrames.length}`)
+  console.log(`🔍 DEBUG: Total frames found: ${parentFrames.length}`)
   return parentFrames
 }
 
@@ -912,6 +952,8 @@ function traverseDocumentNodes(node: FigmaNode, context: TraversalContext & { st
 
   const isParentFrame = context.parentFrames.some((frame) => frame.id === node.id)
   if (isParentFrame) {
+    logDebug(`Initializing frame analysis for: "${node.name}" (${node.id}) - type: ${node.type}`)
+    console.log(`🔍 DEBUG: Initializing frame analysis for: "${node.name}" (${node.id}) - type: ${node.type}`)
     currentFrame = {
       id: node.id,
       name: node.name,
@@ -975,6 +1017,8 @@ function initializeFrameAnalysis(
   frameAnalyses: Map<string, FrameAnalysis>,
 ): void {
   if (!frameAnalyses.has(frameId)) {
+    logDebug(`Creating new frame analysis for: "${frameName}" (${frameId})`)
+    console.log(`🔍 DEBUG: Creating new frame analysis for: "${frameName}" (${frameId})`)
     frameAnalyses.set(frameId, {
       frameId,
       frameName,
@@ -985,6 +1029,9 @@ function initializeFrameAnalysis(
       tokenizedProperties: 0,
       tokenizationRate: 0,
     })
+  } else {
+    logDebug(`Frame analysis already exists for: "${frameName}" (${frameId})`)
+    console.log(`🔍 DEBUG: Frame analysis already exists for: "${frameName}" (${frameId})`)
   }
 }
 

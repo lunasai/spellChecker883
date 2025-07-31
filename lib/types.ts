@@ -150,6 +150,7 @@ export interface AnalysisResult {
       }>
     }>
     detachedComponents?: DetachedComponentInfo[]
+    rootNodeType?: string // Add the root node type for display
   }
   tokenMatches: TokenMatch[]
   unmatchedValues: UnmatchedValue[]
