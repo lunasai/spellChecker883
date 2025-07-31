@@ -1,5 +1,5 @@
 import { ERROR_MESSAGES } from "@/lib/constants"
-import { extractFileIdFromUrl } from "@/lib/figma-utils"
+import { extractFileIdFromUrl, extractFigmaUrlInfo } from "@/lib/figma-utils"
 import { resolveTokensWithSemantics, resolveTokensWithTheme } from "@/lib/token-utils"
 import { analyzeFigmaFileByFrames } from "@/lib/figma-analyzer"
 import { matchValuesWithTokens } from "@/lib/token-matcher"
@@ -51,11 +51,11 @@ export async function analyzeClientSide(
     const figmaData = await fetchFigmaFile(figmaUrl, figmaToken)
 
     // Fetch Figma styles for variable detection
-    const fileId = extractFileIdFromUrl(figmaUrl)
+    const { fileKey } = extractFigmaUrlInfo(figmaUrl)
     let styleIdToStyle = {}
-    if (fileId) {
+    if (fileKey) {
       try {
-        styleIdToStyle = await fetchFigmaStyles(fileId, figmaToken)
+        styleIdToStyle = await fetchFigmaStyles(fileKey, figmaToken)
         console.log("Fetched Figma styles for variable detection.")
       } catch (err) {
         console.warn("Failed to fetch Figma styles:", err)
@@ -132,12 +132,56 @@ async function parseTokensFile(tokensFile: File): Promise<DesignToken> {
 }
 
 async function fetchFigmaFile(figmaUrl: string, figmaToken: string) {
-  const fileId = extractFileIdFromUrl(figmaUrl)
-  if (!fileId) {
+  const { fileKey, nodeId } = extractFigmaUrlInfo(figmaUrl)
+  
+  if (!fileKey) {
     throw new Error(ERROR_MESSAGES.INVALID_FIGMA_URL)
   }
 
-  const figmaResponse = await fetch(`https://api.figma.com/v1/files/${fileId}`, {
+  // If node-id is present, try to fetch specific node
+  if (nodeId) {
+    console.log(`Fetching specific node: ${nodeId} from file: ${fileKey}`)
+    
+    try {
+      // Try to fetch the specific node
+      const nodeResponse = await fetch(`https://api.figma.com/v1/files/${fileKey}/nodes?ids=${nodeId}`, {
+        headers: {
+          "X-Figma-Token": figmaToken,
+        },
+      })
+
+      if (nodeResponse.ok) {
+        const nodeData = await nodeResponse.json()
+        
+        // Check if the node was found
+        if (nodeData.nodes && nodeData.nodes[nodeId]) {
+          console.log(`Successfully fetched node: ${nodeId}`)
+          return {
+            document: nodeData.nodes[nodeId].document,
+            name: nodeData.nodes[nodeId].document.name,
+            lastModified: nodeData.nodes[nodeId].document.lastModified,
+            version: nodeData.nodes[nodeId].document.version,
+            role: nodeData.nodes[nodeId].document.role,
+            editorType: nodeData.nodes[nodeId].document.editorType,
+            linkAccess: nodeData.nodes[nodeId].document.linkAccess,
+          }
+        }
+      }
+      
+      // If node fetch failed and it's a page-level node (0:1), fallback to full file
+      if (nodeId === "0:1") {
+        console.log("Node fetch failed for page-level node (0:1), falling back to full file")
+      } else {
+        console.warn(`Failed to fetch node ${nodeId}, falling back to full file`)
+      }
+    } catch (error) {
+      console.warn(`Error fetching node ${nodeId}:`, error)
+    }
+  }
+
+  // Fallback to full file fetch (original behavior)
+  console.log(`Fetching full file: ${fileKey}`)
+  const figmaResponse = await fetch(`https://api.figma.com/v1/files/${fileKey}`, {
     headers: {
       "X-Figma-Token": figmaToken,
     },

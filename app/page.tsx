@@ -126,7 +126,7 @@ function AppHeader() {
   return (
     <div className="text-center mb-12 mt-16">
       <div className="inline-flex items-center gap-3">
-        <span className="text-2xl">🐱</span>
+        <span className="text-2xl">🕷️</span>
         <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
           Spell checker
         </h1>

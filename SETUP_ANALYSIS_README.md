@@ -114,4 +114,64 @@ const customFile = new File([jsonContent], 'custom-tokens.json', { type: 'applic
 2. **Flexibility**: Still supports custom library uploads when needed
 3. **Clarity**: Clear distinction between default and custom flows
 4. **Efficiency**: Reduces setup time for common use cases
-5. **Maintainability**: Clean separation of concerns in the codebase 
+5. **Maintainability**: Clean separation of concerns in the codebase
+
+## Node-Specific Analysis
+
+### Overview
+
+The tool now supports analyzing specific nodes within a Figma file when the URL contains a `node-id` parameter. This allows for more targeted analysis of individual components, frames, or pages.
+
+### Supported URL Formats
+
+The tool automatically detects and handles the following Figma URL formats:
+
+1. **Full File Analysis** (existing behavior):
+   ```
+   https://www.figma.com/design/yYPU0w9uAEP7yIHOJxEeRg/miss-c-rate
+   ```
+
+2. **Node-Specific Analysis** (new feature):
+   ```
+   https://www.figma.com/design/yYPU0w9uAEP7yIHOJxEeRg/miss-c-rate?node-id=174-64&t=...
+   https://www.figma.com/design/yYPU0w9uAEP7yIHOJxEeRg/miss-c-rate?node-id=0-1
+   https://www.figma.com/design/yYPU0w9uAEP7yIHOJxEeRg/miss-c-rate?node-id=59-150
+   ```
+
+### URL Parsing Logic
+
+The tool extracts both the file key and node ID from Figma URLs:
+
+- **File Key**: Extracted from the URL path (e.g., `yYPU0w9uAEP7yIHOJxEeRg`)
+- **Node ID**: Extracted from the `node-id` parameter and converted from URL format (`174-64`) to internal format (`174:64`)
+
+### Analysis Behavior
+
+1. **Node ID Present**:
+   - Fetches specific node using `/files/{file_key}/nodes?ids={nodeId}` endpoint
+   - Analyzes only the specified node and its children
+   - Falls back to full file analysis if node fetch fails
+
+2. **Page-Level Node (0:1)**:
+   - Attempts to fetch the specific page node
+   - If the page-level node fetch fails, automatically falls back to full file analysis
+   - This handles cases where page-level nodes may not be accessible via the nodes endpoint
+
+3. **No Node ID**:
+   - Uses existing full file analysis behavior
+   - Fetches entire file using `/files/{file_key}` endpoint
+
+### Technical Implementation
+
+- **URL Parsing**: Enhanced `extractFigmaUrlInfo()` function in `lib/figma-utils.ts`
+- **API Integration**: Updated `fetchFigmaFile()` function in `lib/client-analyzer.ts`
+- **Fallback Logic**: Graceful fallback to full file analysis when node-specific fetching fails
+- **Error Handling**: Comprehensive error handling for both node-specific and full file fetching
+
+### Benefits
+
+1. **Targeted Analysis**: Analyze specific components or frames without processing the entire file
+2. **Performance**: Faster analysis for large files when only specific nodes are needed
+3. **Precision**: Focus analysis on relevant design elements
+4. **Backward Compatibility**: Maintains full file analysis for URLs without node IDs
+5. **Robust Fallback**: Automatic fallback ensures analysis always completes 

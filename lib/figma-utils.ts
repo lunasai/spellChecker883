@@ -102,4 +102,26 @@ export function extractFileIdFromUrl(figmaUrl: string): string | null {
   return match ? match[2] : null
 }
 
+export function extractFigmaUrlInfo(figmaUrl: string): { fileKey: string | null; nodeId: string | null } {
+  // Extract file key
+  const fileKey = extractFileIdFromUrl(figmaUrl)
+  
+  // Extract node-id from URL parameters
+  let nodeId: string | null = null
+  try {
+    const url = new URL(figmaUrl)
+    const nodeIdParam = url.searchParams.get("node-id")
+    if (nodeIdParam) {
+      // Convert URL format (174-64) to internal format (174:64)
+      // First decode %3A if present, then convert - to :
+      const decodedNodeId = nodeIdParam.replace(/%3A/g, ":")
+      nodeId = decodedNodeId.replace(/-/g, ":")
+    }
+  } catch (error) {
+    console.warn("Failed to parse Figma URL for node-id:", error)
+  }
+  
+  return { fileKey, nodeId }
+}
+
 export type { FrameAnalysis } from "./types"
